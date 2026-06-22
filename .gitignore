@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+
+# NeoForge/Minecraft runtime directories
+run/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+out/
+
+# OS files
+.DS_Store
+Thumbs.db
+
