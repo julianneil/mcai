@@ -2,6 +2,7 @@ package com.modai.mcai;
 
 import com.modai.mcai.client.KeyBindings;
 import com.modai.mcai.client.command.AiCommand;
+import com.modai.mcai.client.recipe.JeiTrackingOverlay;
 import com.modai.mcai.client.recipe.RecipeHighlightRenderer;
 
 import net.neoforged.api.distmarker.Dist;
@@ -13,6 +14,7 @@ import net.neoforged.neoforge.client.event.ContainerScreenEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 
@@ -41,5 +43,15 @@ public class mcaiClient {
     @SubscribeEvent
     public static void onContainerForeground(ContainerScreenEvent.Render.Foreground event) {
         RecipeHighlightRenderer.onContainerForeground(event);
+    }
+
+    @SubscribeEvent
+    public static void onScreenRenderPost(ScreenEvent.Render.Post event) {
+        JeiTrackingOverlay.onScreenRenderPost(event);
+    }
+
+    @SubscribeEvent
+    public static void onMouseButtonPressedPre(ScreenEvent.MouseButtonPressed.Pre event) {
+        JeiTrackingOverlay.onMouseButtonPressedPre(event);
     }
 }

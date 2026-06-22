@@ -2,6 +2,8 @@ package com.modai.mcai.client.command;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.modai.mcai.client.AiChatManager;
+import com.modai.mcai.client.recipe.JeiRecipeBridge;
+import com.modai.mcai.client.recipe.JeiRecipeBridge.OpenResult;
 import com.modai.mcai.client.recipe.RecipeTracker;
 import com.modai.mcai.client.recipe.RecipeTracker.TrackResult;
 
@@ -27,6 +29,18 @@ public class AiCommand {
                         .then(argument("recipe", StringArgumentType.greedyString())
                                 .executes(context -> {
                                     trackRecipe(StringArgumentType.getString(context, "recipe"));
+                                    return 1;
+                                })))
+                .then(literal("jei")
+                        .then(argument("recipe", StringArgumentType.greedyString())
+                                .executes(context -> {
+                                    openJeiRecipe(StringArgumentType.getString(context, "recipe"));
+                                    return 1;
+                                })))
+                .then(literal("jeiuses")
+                        .then(argument("item", StringArgumentType.greedyString())
+                                .executes(context -> {
+                                    openJeiUses(StringArgumentType.getString(context, "item"));
                                     return 1;
                                 })))
                 .then(literal("cleartrack")
@@ -62,6 +76,42 @@ public class AiCommand {
         TrackResult result = RecipeTracker.get().track(recipeQuery);
         minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
                 .append(result.message()), false);
+    }
+
+    private static void openJeiRecipe(String recipeQuery) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        TrackResult trackResult = RecipeTracker.get().track(recipeQuery);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(trackResult.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(trackResult.message()), false);
+        if (!trackResult.success()) {
+            return;
+        }
+
+        OpenResult jeiResult = JeiRecipeBridge.showRecipesFor(RecipeTracker.get().targetStack());
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(jeiResult.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(jeiResult.message()), false);
+    }
+
+    private static void openJeiUses(String itemQuery) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        TrackResult trackResult = RecipeTracker.get().track(itemQuery);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(trackResult.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(trackResult.message()), false);
+        if (!trackResult.success()) {
+            return;
+        }
+
+        OpenResult jeiResult = JeiRecipeBridge.showUsesFor(RecipeTracker.get().targetStack());
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(jeiResult.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(jeiResult.message()), false);
     }
 
     private static void clearRecipeTrack() {

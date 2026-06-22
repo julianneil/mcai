@@ -42,12 +42,17 @@ Implemented:
   - Searches loaded client recipes.
   - Matches recipe ID, output item, ingredients, registry IDs.
   - Injects relevant recipes into AI prompt.
-- Recipe tree highlighting MVP:
+- Recipe tree tracking/highlighting:
   - `/mcai track <recipe>` starts tracking a recipe tree.
   - `/mcai cleartrack` clears highlights.
   - Highlights matching items in inventories/chests/container screens.
   - Uses recursive ingredient recipe traversal.
   - Fixed container-local coordinate alignment.
+  - Uses distinct colors for target, crafted intermediate, and base ingredients.
+  - Shows hover tooltips explaining why highlighted items matter.
+  - Shows the active tracked recipe tree in the MCAI GUI.
+  - Can open optional JEI recipe/usage views when JEI is installed.
+  - Adds an optional MCAI Track button overlay on JEI recipe pages.
 
 ## Current commands
 
@@ -69,6 +74,8 @@ Recipe tracker:
 
 ```text
 /mcai track crafting table
+/mcai jei crafting table
+/mcai jeiuses cobblestone
 /mcai cleartrack
 ```
 
@@ -162,25 +169,26 @@ src/main/resources/assets/mcai/lang/en_us.json
 
 ## Known limitations
 
-- Recipe tree highlighting uses one highlight color for all tracked items.
 - Recipe tree traversal picks the first matching child recipe for intermediate ingredients.
+- Recipe tree GUI panel is compact and currently shows only the first few tree rows.
 - External mod wiki/docs are not implemented yet.
-- NEI/JEI/EMI integration is not implemented yet.
-- General modpack support is mostly there through loaded mods/registries, but prompt wording still mentions FTB StoneBlock 4.
+- JEI integration is initial/optional; EMI integration is not implemented yet.
+- Modpack support is based on loaded mods/registries and does not yet detect a pack display name.
 
 ## Recommended next steps
 
-1. Improve recipe tree highlighting:
-   - Different colors for target, intermediate, and base ingredients.
-   - Tooltip explaining why an item is highlighted.
-   - Optional pinned recipe target in MCAI GUI.
+1. Improve recipe tree browsing:
+   - Add scrolling/expansion for large recipe trees.
+   - Show item counts/required quantities where recipe data exposes them clearly.
+   - Let users select among multiple matching child recipes.
 2. External wiki/docs support:
    - Configurable trusted source URLs.
    - Local cache.
    - Lightweight search/RAG snippets injected into prompts.
-3. Make modpack-agnostic:
+3. Improve modpack awareness:
    - Detect pack name if possible.
-   - Replace StoneBlock-specific default prompt with dynamic wording.
+   - Include detected pack name in context/prompt wording.
 4. Mod recipe viewer integration:
-   - Prefer EMI/JEI on modern NeoForge.
+   - Expand JEI integration beyond opening focused recipe/usage views.
+   - Add EMI support for packs that prefer EMI.
    - NEI is older and mostly not used in 1.21.1 packs.

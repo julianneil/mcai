@@ -35,7 +35,7 @@ public class Config {
 
     public static final ModConfigSpec.ConfigValue<String> SYSTEM_PROMPT = BUILDER
             .comment("System prompt sent to the assistant before the conversation.")
-            .define("systemPrompt", "You are MCAI, a helpful in-game Minecraft assistant for FTB StoneBlock 4. Give concise, practical advice about recipes, progression, and gameplay. If you are unsure, say so.");
+            .define("systemPrompt", "You are MCAI, a helpful in-game Minecraft assistant for modded Minecraft. Use the provided inventory, player, modpack, and recipe context to give concise, practical advice about recipes, progression, and gameplay. If you are unsure, say so.");
 
     public static final ModConfigSpec.IntValue REQUEST_TIMEOUT_SECONDS = BUILDER
             .comment("Maximum number of seconds to wait for Ollama to respond.")

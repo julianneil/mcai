@@ -116,6 +116,25 @@ Examples:
 /mcai track iron pickaxe
 ```
 
+Open a tracked recipe in JEI, if JEI is installed:
+
+```text
+/mcai jei <recipe>
+```
+
+Open usages for a tracked item in JEI, if JEI is installed:
+
+```text
+/mcai jeiuses <item>
+```
+
+Examples:
+
+```text
+/mcai jei furnace
+/mcai jeiuses cobblestone
+```
+
 Clear active recipe highlights:
 
 ```text
@@ -127,6 +146,7 @@ Clear active recipe highlights:
 - Press `G` to open the MCAI chat GUI.
 - The GUI shows conversation history, model/context status, and active recipe tracking status.
 - When a recipe is tracked, the GUI displays a compact recipe tree panel.
+- If JEI is installed, JEI recipe pages show an MCAI `Track` button for the visible recipe output.
 - Inventory/container screens highlight tracked recipe items by role:
   - Target output.
   - Crafted intermediate ingredient.

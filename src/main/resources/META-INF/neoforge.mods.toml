@@ -47,7 +47,7 @@ authors="Republiks"
 # The description text for the mod (multi line!) (#mandatory)
 description='''
 MCAI adds an in-game AI chat assistant powered by your local Ollama server.
-Ask for StoneBlock 4 advice, recipe help, and progression guidance from chat or the MCAI screen.
+Ask for modpack-aware advice, recipe help, and progression guidance from chat or the MCAI screen.
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
