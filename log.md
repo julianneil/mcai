@@ -43,6 +43,7 @@ This file records the main work completed today and the remaining follow-up item
   - offline fallback
   - prompt mode and tone controls
   - share whitelist controls
+- The mod has been tested successfully in the SB4 modpack on NeoForge 21.1.233.
 - The working tree has active changes but no new commit was requested for the latest work.
 
 ## Future Work
@@ -58,6 +59,7 @@ This file records the main work completed today and the remaining follow-up item
 ### Feature Follow-up
 
 - Continue refining recipe answering for more modded packs.
+- Add exact `modid.itemid` tracking support so `/mcai track` can resolve the intended item directly and avoid false matches like AE2 dyed tracking when the user means controller.
 - Add favorites/bookmarks UI affordances if command-only use is not enough.
 - Add safer sharing presets instead of only a manual whitelist.
 - Add more chat modes if the current set is not enough.
@@ -68,4 +70,3 @@ This file records the main work completed today and the remaining follow-up item
 - Keep verifying JEI behavior against real modpacks.
 - Keep checking FTB Quests compatibility against different quest setups.
 - If another modpack or mod needs integration help, verify the path before release.
-
