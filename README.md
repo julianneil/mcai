@@ -8,6 +8,8 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 
 - `/ai <message>` in-game chat command.
 - `/mcai tone terse|balanced|detailed` response-style control.
+- `/mcai mode default|help|debug|progression` chat-mode control.
+- `/mcai share`, `/mcai share set <csv>`, `/mcai share allow <category>`, `/mcai share deny <category>`, and `/mcai share reset` sharing controls.
 - `/mcai history`, `/mcai history clear`, `/mcai history retry`, and `/mcai history export`.
 - `/mcai bookmark add`, `/mcai bookmark current`, `/mcai bookmark item`, `/mcai bookmark recipe`, `/mcai bookmark list`, `/mcai bookmark open`, and `/mcai bookmark remove`.
 - `G` keybind for the MCAI chat GUI.
@@ -15,9 +17,10 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 - Compact summaries for inventory, player, and modpack context when using the normal context profile.
 - FTB Quests context and progression suggestions when the quest mod is installed.
 - Recipe grounding from loaded client recipes.
-- Recipe tracking with colored inventory highlights and a recipe tree panel.
+- Recipe tracking with colored inventory highlights and a branch-style recipe visual.
 - Quick lookups with `/mcai item`, `/mcai block`, and `/mcai mod`.
 - Quest summary and next-step guidance with `/mcai quests` and `/mcai quests next`.
+- Offline fallback answers for local recipe, lookup, and quest questions when Ollama is unavailable.
 - Local-only AI inference through Ollama by default.
 
 ## Requirements
@@ -82,7 +85,12 @@ includePlayerContext = true
 includeModpackContext = true
 includeRecipeContext = true
 includeQuestContext = true
+enableOfflineFallback = true
 maxRecipeContextResults = 8
+recipeBranchMaxDepth = 4
+recipeBranchMaxChildren = 3
+chatMode = "default"
+shareWhitelist = "player,inventory,modpack,recipe,quest"
 requestTimeoutSeconds = 120
 ```
 
@@ -92,6 +100,10 @@ Notes:
 - `ollamaModel` must match a model installed with `ollama pull`.
 - Context toggles control what game information MCAI includes in prompts.
 - `includeQuestContext` enables soft FTB Quests integration when the mod is present.
+- `enableOfflineFallback` lets MCAI answer local recipe, registry, and quest questions even if Ollama is down.
+- `recipeBranchMaxDepth` and `recipeBranchMaxChildren` control how much of the recipe branch visual is shown in the GUI.
+- `chatMode` changes the prompt style to default, help, debug, or progression.
+- `shareWhitelist` limits which live game-state categories MCAI is allowed to send to the model.
 - Increase `requestTimeoutSeconds` if your model is slow on your hardware.
 
 ## In-game commands
@@ -131,6 +143,25 @@ Change the assistant tone:
 /mcai tone terse
 /mcai tone balanced
 /mcai tone detailed
+```
+
+Change the chat mode:
+
+```text
+/mcai mode default
+/mcai mode help
+/mcai mode debug
+/mcai mode progression
+```
+
+Control what MCAI can share:
+
+```text
+/mcai share
+/mcai share set player,inventory,recipe
+/mcai share allow quest
+/mcai share deny modpack
+/mcai share reset
 ```
 
 Inspect chat history:
@@ -198,9 +229,12 @@ Check quest status and next steps:
 
 - Press `G` to open the MCAI chat GUI.
 - The GUI shows conversation history, model/context status, and active recipe tracking status.
-- When a recipe is tracked, the GUI displays a compact recipe tree panel.
+- When a recipe is tracked, the GUI displays a branch-style recipe visual.
 - The GUI also reflects the current tone and context toggles.
+- The GUI status line shows the current chat mode and share whitelist summary.
 - If JEI is installed, JEI recipe pages show an MCAI `Track` button for the visible recipe output.
+- Clicking a tracked recipe node opens that recipe in JEI when JEI is installed.
+- If JEI is not installed or not ready, the click falls back cleanly and shows a message instead of erroring.
 - Inventory/container screens highlight tracked recipe items by role:
   - Target output.
   - Crafted intermediate ingredient.
@@ -220,6 +254,8 @@ curl http://127.0.0.1:11434/api/tags
 ```
 
 If this fails, restart Ollama and try again.
+
+If you want MCAI to keep working without Ollama, leave `enableOfflineFallback = true` and use the local commands for items, blocks, mods, quests, and tracked recipes.
 
 ### Model not found
 

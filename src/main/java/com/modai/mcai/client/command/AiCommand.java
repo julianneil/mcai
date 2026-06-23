@@ -28,6 +28,8 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
+import java.util.LinkedHashSet;
+
 public class AiCommand {
     public static void register(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(literal("ai")
@@ -152,6 +154,59 @@ public class AiCommand {
                         .then(literal(Config.RESPONSE_TONE_DETAILED)
                                 .executes(context -> {
                                     setTone(Config.RESPONSE_TONE_DETAILED);
+                                    return 1;
+                                })))
+                .then(literal("mode")
+                        .executes(context -> {
+                            showMode();
+                            return 1;
+                        })
+                        .then(literal(Config.CHAT_MODE_DEFAULT)
+                                .executes(context -> {
+                                    setMode(Config.CHAT_MODE_DEFAULT);
+                                    return 1;
+                                }))
+                        .then(literal(Config.CHAT_MODE_HELP)
+                                .executes(context -> {
+                                    setMode(Config.CHAT_MODE_HELP);
+                                    return 1;
+                                }))
+                        .then(literal(Config.CHAT_MODE_DEBUG)
+                                .executes(context -> {
+                                    setMode(Config.CHAT_MODE_DEBUG);
+                                    return 1;
+                                }))
+                        .then(literal(Config.CHAT_MODE_PROGRESS)
+                                .executes(context -> {
+                                    setMode(Config.CHAT_MODE_PROGRESS);
+                                    return 1;
+                                })))
+                .then(literal("share")
+                        .executes(context -> {
+                            showShareWhitelist();
+                            return 1;
+                        })
+                        .then(literal("set")
+                                .then(argument("list", StringArgumentType.greedyString())
+                                        .executes(context -> {
+                                            setShareWhitelist(StringArgumentType.getString(context, "list"));
+                                            return 1;
+                                        })))
+                        .then(literal("allow")
+                                .then(argument("category", StringArgumentType.string())
+                                        .executes(context -> {
+                                            allowShareCategory(StringArgumentType.getString(context, "category"));
+                                            return 1;
+                                        })))
+                        .then(literal("deny")
+                                .then(argument("category", StringArgumentType.string())
+                                        .executes(context -> {
+                                            denyShareCategory(StringArgumentType.getString(context, "category"));
+                                            return 1;
+                                        })))
+                        .then(literal("reset")
+                                .executes(context -> {
+                                    resetShareWhitelist();
                                     return 1;
                                 })))
                 .then(literal("item")
@@ -644,6 +699,122 @@ public class AiCommand {
 
         minecraft.player.displayClientMessage(Component.literal("MCAI tone set to ").withStyle(ChatFormatting.GREEN)
                 .append(Component.literal(tone).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void showMode() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI mode: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(AiChatManager.get().describeChatMode()).withStyle(ChatFormatting.AQUA)), false);
+        minecraft.player.displayClientMessage(Component.literal("Use /mcai mode default|help|debug|progression").withStyle(ChatFormatting.DARK_GRAY), false);
+    }
+
+    private static void setMode(String mode) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        AiChatManager.get().setChatMode(mode);
+        minecraft.player.displayClientMessage(Component.literal("MCAI mode set to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(AiChatManager.get().describeChatMode()).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void showShareWhitelist() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI share whitelist: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(AiChatManager.get().describeShareWhitelist()).withStyle(ChatFormatting.AQUA)), false);
+        minecraft.player.displayClientMessage(Component.literal("Use /mcai share set <csv> or /mcai share allow|deny <category>").withStyle(ChatFormatting.DARK_GRAY), false);
+    }
+
+    private static void setShareWhitelist(String whitelist) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        AiChatManager.get().setShareWhitelist(whitelist);
+        minecraft.player.displayClientMessage(Component.literal("MCAI share whitelist set to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(AiChatManager.get().describeShareWhitelist()).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void allowShareCategory(String category) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        String normalizedCategory = normalizeShareCategory(category);
+        if (normalizedCategory == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: Unknown share category. Use player, inventory, modpack, recipe, quest, or all.").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        LinkedHashSet<String> values = parseShareWhitelist(AiChatManager.get().describeShareWhitelist());
+        values.add(normalizedCategory);
+        AiChatManager.get().setShareWhitelist(String.join(",", values));
+        minecraft.player.displayClientMessage(Component.literal("MCAI share whitelist set to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(AiChatManager.get().describeShareWhitelist()).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void denyShareCategory(String category) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        String normalizedCategory = normalizeShareCategory(category);
+        if (normalizedCategory == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: Unknown share category. Use player, inventory, modpack, recipe, quest, or all.").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        LinkedHashSet<String> values = parseShareWhitelist(AiChatManager.get().describeShareWhitelist());
+        values.remove(normalizedCategory);
+        AiChatManager.get().setShareWhitelist(String.join(",", values));
+        minecraft.player.displayClientMessage(Component.literal("MCAI share whitelist set to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(AiChatManager.get().describeShareWhitelist()).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void resetShareWhitelist() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        AiChatManager.get().setShareWhitelist("player,inventory,modpack,recipe,quest");
+        minecraft.player.displayClientMessage(Component.literal("MCAI share whitelist reset to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(AiChatManager.get().describeShareWhitelist()).withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static LinkedHashSet<String> parseShareWhitelist(String whitelist) {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        if (whitelist == null || whitelist.isBlank()) {
+            return values;
+        }
+
+        for (String token : whitelist.toLowerCase().split(",")) {
+            String trimmed = token.trim();
+            if (!trimmed.isEmpty()) {
+                values.add(trimmed);
+            }
+        }
+        return values;
+    }
+
+    private static String normalizeShareCategory(String category) {
+        String value = category == null ? "" : category.trim().toLowerCase();
+        return switch (value) {
+            case "player", "inventory", "modpack", "recipe", "quest", "all" -> value;
+            default -> null;
+        };
     }
 
     private static String errorText(Throwable error) {

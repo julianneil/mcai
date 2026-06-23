@@ -2,6 +2,7 @@ package com.modai.mcai.client;
 
 import com.modai.mcai.Config;
 import com.modai.mcai.client.OllamaClient.AiMessage;
+import com.modai.mcai.client.OfflineFallbackResponder;
 import com.modai.mcai.client.context.InventoryContextProvider;
 import com.modai.mcai.client.context.ModpackContextProvider;
 import com.modai.mcai.client.context.PlayerContextProvider;
@@ -13,6 +14,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +35,7 @@ public class AiChatManager {
     private final ModpackContextProvider modpackContextProvider = new ModpackContextProvider();
     private final QuestContextProvider questContextProvider = new QuestContextProvider();
     private final RecipeContextProvider recipeContextProvider = new RecipeContextProvider();
+    private final OfflineFallbackResponder offlineFallbackResponder = new OfflineFallbackResponder();
     private final List<AiMessage> history = new ArrayList<>();
 
     private AiChatManager() {
@@ -76,7 +79,7 @@ public class AiChatManager {
             requestMessages.addAll(history);
         }
 
-        sendChatRequest(requestMessages, onReply, onError, null);
+        sendChatRequest(requestMessages, trimmedMessage, onReply, onError, null);
     }
 
     public boolean retryLastResponse(Consumer<String> onReply, Consumer<Throwable> onError) {
@@ -90,7 +93,7 @@ public class AiChatManager {
             List<AiMessage> requestMessages = new ArrayList<>();
             requestMessages.add(new AiMessage("system", buildSystemPrompt(userMessage)));
             requestMessages.addAll(history);
-            sendChatRequest(requestMessages, onReply, onError, () -> {
+            sendChatRequest(requestMessages, userMessage, onReply, onError, () -> {
                 synchronized (this) {
                     history.add(removedAssistant);
                     trimHistory();
@@ -133,9 +136,10 @@ public class AiChatManager {
     private String buildSystemPrompt(String userMessage) {
         StringBuilder prompt = new StringBuilder(Config.SYSTEM_PROMPT.get());
         appendToneInstruction(prompt);
+        appendModeInstruction(prompt);
 
         String contextProfile = Config.CONTEXT_PROFILE.get().toLowerCase(Locale.ROOT);
-        if (Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean() || Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean() || Config.INCLUDE_MODPACK_CONTEXT.getAsBoolean() || Config.INCLUDE_RECIPE_CONTEXT.getAsBoolean() || Config.INCLUDE_QUEST_CONTEXT.getAsBoolean()) {
+        if (hasAnyAllowedContext()) {
             prompt.append("\n\nUse the following live game/modpack context when it is relevant. Do not invent items, positions, entities, loaded mods, or recipes that are not listed.");
         }
 
@@ -143,24 +147,24 @@ public class AiChatManager {
             prompt.append("\n\nWhen the context is ambiguous, explain the uncertainty and give the most useful next check to do in-game.");
         }
 
-        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_MODPACK_CONTEXT.getAsBoolean()) {
+        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_MODPACK_CONTEXT.getAsBoolean() && isShareAllowed("modpack")) {
             prompt.append("\n\n").append(richContext(contextProfile) ? modpackContextProvider.buildContext() : modpackContextProvider.buildSummary());
         }
 
-        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean()) {
+        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean() && isShareAllowed("player")) {
             prompt.append("\n\n").append(richContext(contextProfile) ? playerContextProvider.buildContext() : playerContextProvider.buildSummary());
         }
 
-        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean()) {
+        if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean() && isShareAllowed("inventory")) {
             prompt.append("\n\n").append(richContext(contextProfile) ? inventoryContextProvider.buildContext() : inventoryContextProvider.buildSummary());
         }
 
-        if (Config.INCLUDE_QUEST_CONTEXT.getAsBoolean()) {
+        if (Config.INCLUDE_QUEST_CONTEXT.getAsBoolean() && isShareAllowed("quest")) {
             prompt.append("\n\nIf the quest context includes next progression suggestions, use them first when the user asks what to do next or how to continue the pack. If no clear next step exists, say so plainly and mention the closest relevant quest or missing dependency.");
             prompt.append("\n\n").append(questContextProvider.buildContext());
         }
 
-        if (Config.INCLUDE_RECIPE_CONTEXT.getAsBoolean()) {
+        if (Config.INCLUDE_RECIPE_CONTEXT.getAsBoolean() && isShareAllowed("recipe")) {
             prompt.append("\n\n").append(recipeContextProvider.buildContext(userMessage));
         }
 
@@ -169,6 +173,119 @@ public class AiChatManager {
 
     private boolean richContext(String contextProfile) {
         return Config.CONTEXT_PROFILE_RICH.equals(contextProfile);
+    }
+
+    private void appendModeInstruction(StringBuilder prompt) {
+        String mode = Config.CHAT_MODE.get().toLowerCase(Locale.ROOT);
+        switch (mode) {
+            case Config.CHAT_MODE_HELP -> prompt.append("\n\nMode: help. Give direct, practical guidance and keep the answer easy to act on.");
+            case Config.CHAT_MODE_DEBUG -> prompt.append("\n\nMode: debug. Be explicit about assumptions, missing data, and what was used from live context.");
+            case Config.CHAT_MODE_PROGRESS -> prompt.append("\n\nMode: progression. Prioritize next steps, pack progression, and the most useful thing to do next.");
+            default -> prompt.append("\n\nMode: default. Stay balanced unless the user asks for a different style.");
+        }
+    }
+
+    private boolean hasAnyAllowedContext() {
+        return isShareAllowed("player")
+                || isShareAllowed("inventory")
+                || isShareAllowed("modpack")
+                || isShareAllowed("recipe")
+                || isShareAllowed("quest");
+    }
+
+    private boolean isShareAllowed(String category) {
+        String whitelist = Config.SHARE_WHITELIST.get();
+        if (whitelist == null || whitelist.isBlank()) {
+            return false;
+        }
+
+        for (String entry : whitelist.toLowerCase(Locale.ROOT).split(",")) {
+            String trimmed = entry.trim();
+            if (trimmed.equals("all")) {
+                return true;
+            }
+            if (trimmed.equals(category.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public synchronized String describeShareWhitelist() {
+        return normalizeShareWhitelist(Config.SHARE_WHITELIST.get());
+    }
+
+    public synchronized String describeShareWhitelistCompact() {
+        String whitelist = describeShareWhitelist();
+        if (whitelist.isBlank()) {
+            return "none";
+        }
+        if (whitelist.equals("all")) {
+            return "all";
+        }
+
+        List<String> parts = new ArrayList<>();
+        for (String category : whitelist.split(",")) {
+            switch (category) {
+                case "player" -> parts.add("P");
+                case "inventory" -> parts.add("I");
+                case "modpack" -> parts.add("M");
+                case "recipe" -> parts.add("R");
+                case "quest" -> parts.add("Q");
+                default -> {
+                    // Ignore.
+                }
+            }
+        }
+        return parts.isEmpty() ? "none" : String.join("/", parts);
+    }
+
+    public synchronized void setShareWhitelist(String whitelist) {
+        Config.SHARE_WHITELIST.set(normalizeShareWhitelist(whitelist));
+        Config.SHARE_WHITELIST.save();
+    }
+
+    public synchronized void setChatMode(String mode) {
+        Config.CHAT_MODE.set(normalizeChatMode(mode));
+        Config.CHAT_MODE.save();
+    }
+
+    public synchronized String describeChatMode() {
+        return Config.CHAT_MODE.get();
+    }
+
+    private String normalizeChatMode(String mode) {
+        String value = mode == null ? "" : mode.trim().toLowerCase(Locale.ROOT);
+        if (Config.CHAT_MODE_HELP.equals(value)
+                || Config.CHAT_MODE_DEBUG.equals(value)
+                || Config.CHAT_MODE_PROGRESS.equals(value)) {
+            return value;
+        }
+        return Config.CHAT_MODE_DEFAULT;
+    }
+
+    private String normalizeShareWhitelist(String whitelist) {
+        if (whitelist == null || whitelist.isBlank()) {
+            return "";
+        }
+
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String token : whitelist.toLowerCase(Locale.ROOT).split(",")) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.equals("all")) {
+                return "all";
+            }
+            switch (trimmed) {
+                case "player", "inventory", "modpack", "recipe", "quest" -> values.add(trimmed);
+                default -> {
+                    // Ignore unknown categories.
+                }
+            }
+        }
+        return String.join(",", values);
     }
 
     private void appendToneInstruction(StringBuilder prompt) {
@@ -186,10 +303,20 @@ public class AiChatManager {
         }
     }
 
-    private void sendChatRequest(List<AiMessage> requestMessages, Consumer<String> onReply, Consumer<Throwable> onError, Runnable onFailureRestore) {
+    private void sendChatRequest(List<AiMessage> requestMessages, String userMessage, Consumer<String> onReply, Consumer<Throwable> onError, Runnable onFailureRestore) {
         ollamaClient.chat(requestMessages)
                 .whenComplete((reply, throwable) -> Minecraft.getInstance().execute(() -> {
                     if (throwable != null) {
+                        Optional<String> fallback = offlineFallbackResponder.buildReply(userMessage, unwrap(throwable));
+                        if (fallback.isPresent()) {
+                            synchronized (this) {
+                                history.add(new AiMessage("assistant", fallback.get()));
+                                trimHistory();
+                            }
+                            onReply.accept(fallback.get());
+                            return;
+                        }
+
                         if (onFailureRestore != null) {
                             onFailureRestore.run();
                         }

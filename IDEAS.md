@@ -36,11 +36,14 @@ Implemented by using compact summary context for the normal profile and fuller d
 ## 8. Offline fallback
 
 Let MCAI still provide local recipe and registry answers when Ollama is unavailable.
+Implemented with local fallback replies for recipe, item, block, mod, and quest questions, plus `enableOfflineFallback`.
 
 ## 9. Chat modes
 
 Add named modes like help, debug, and progression to change the system prompt quickly.
+Implemented with `/mcai mode default|help|debug|progression`.
 
 ## 10. Safer sharing controls
 
 Add a whitelist for what game state is allowed to be sent to the model.
+Implemented with `shareWhitelist` plus `/mcai share` commands.

@@ -3,17 +3,20 @@ package com.modai.mcai.client.gui;
 import com.modai.mcai.Config;
 import com.modai.mcai.client.AiChatManager;
 import com.modai.mcai.client.OllamaClient.AiMessage;
+import com.modai.mcai.client.recipe.JeiRecipeBridge;
 import com.modai.mcai.client.recipe.RecipeTracker;
 import com.modai.mcai.client.recipe.RecipeTracker.HighlightRole;
 import com.modai.mcai.client.recipe.RecipeTracker.RecipeTreeNode;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,11 +31,13 @@ public class AiChatScreen extends Screen {
     private static final int BUTTON_GAP = 6;
     private static final int PANEL_INSET = 8;
     private static final int SCROLL_STEP_LINES = 3;
-    private static final int RECIPE_TREE_MAX_LINES = 7;
-    private static final int RECIPE_TREE_INDENT = 10;
+    private static final int RECIPE_BRANCH_ROW_GAP = 16;
+    private static final int RECIPE_BRANCH_CHILD_GAP = 12;
+    private static final int RECIPE_BRANCH_MAX_WIDTH = 220;
 
     private final List<Component> transcript = new ArrayList<>();
     private final List<FormattedCharSequence> wrappedTranscript = new ArrayList<>();
+    private final List<BranchHitBox> branchHitBoxes = new ArrayList<>();
 
     private EditBox input;
     private Button sendButton;
@@ -90,25 +95,30 @@ public class AiChatScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        branchHitBoxes.clear();
 
         int panelLeft = PADDING;
         int panelTop = PADDING + 34;
         int panelRight = this.width - PADDING;
         int panelBottom = this.height - PADDING - INPUT_HEIGHT - 10;
-        int treeBottom = renderRecipeTreePanel(guiGraphics, panelLeft, panelTop, panelRight);
-        int transcriptTop = treeBottom + (treeBottom > panelTop ? 6 : 0);
         int textX = panelLeft + PANEL_INSET;
-        int textY = transcriptTop + PANEL_INSET;
         int lineWidth = panelRight - panelLeft - (PANEL_INSET * 2) - 6;
 
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(0.0F, 0.0F, 200.0F);
+        int treeBottom = renderRecipeBranchPanel(guiGraphics, panelLeft, panelTop, panelRight);
+        int transcriptTop = treeBottom + (treeBottom > panelTop ? 6 : 0);
+        int textY = transcriptTop + PANEL_INSET;
         guiGraphics.fill(panelLeft, transcriptTop, panelRight, panelBottom, 0xD0101010);
         guiGraphics.renderOutline(panelLeft, transcriptTop, panelRight - panelLeft, panelBottom - transcriptTop, 0xFF666666);
-
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         rebuildWrappedTranscriptIfNeeded(lineWidth);
         renderTranscript(guiGraphics, textX, textY, panelBottom - PANEL_INSET);
         renderScrollbar(guiGraphics, panelRight - 5, transcriptTop + PANEL_INSET, panelBottom - PANEL_INSET);
+        renderBranchTooltip(guiGraphics, mouseX, mouseY);
+        guiGraphics.pose().popPose();
 
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, PADDING, 0xFFFFFF);
         guiGraphics.drawString(this.font, statusText(), PADDING, PADDING + 14, 0xB8B8B8, false);
@@ -136,6 +146,28 @@ public class AiChatScreen extends Screen {
             scrollOffsetLines = Math.max(0, scrollOffsetLines - SCROLL_STEP_LINES);
         }
         return true;
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            for (BranchHitBox hitBox : branchHitBoxes) {
+                if (!hitBox.contains(mouseX, mouseY)) {
+                    continue;
+                }
+
+                if (!hitBox.stack().isEmpty()) {
+                    JeiRecipeBridge.OpenResult result = JeiRecipeBridge.showRecipesFor(hitBox.stack());
+                    Minecraft minecraft = Minecraft.getInstance();
+                    if (minecraft.player != null) {
+                        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                                .append(result.message()), false);
+                    }
+                }
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
@@ -295,62 +327,160 @@ public class AiChatScreen extends Screen {
         scrollOffsetLines = Math.min(scrollOffsetLines, maxScrollOffset());
     }
 
-    private int renderRecipeTreePanel(GuiGraphics guiGraphics, int left, int top, int right) {
+    private int renderRecipeBranchPanel(GuiGraphics guiGraphics, int left, int top, int right) {
         RecipeTracker tracker = RecipeTracker.get();
         if (tracker.recipeTree().isEmpty()) {
             return top;
         }
 
-        List<TreeLine> treeLines = new ArrayList<>();
-        collectTreeLines(tracker.recipeTree().get(), 0, treeLines);
-        int visibleLines = Math.min(treeLines.size(), RECIPE_TREE_MAX_LINES);
-        int panelHeight = PANEL_INSET + this.font.lineHeight + 4 + (visibleLines * this.font.lineHeight) + PANEL_INSET;
+        branchHitBoxes.clear();
+
+        BranchNode root = buildBranchNode(tracker.recipeTree().get(), 0);
+        BranchLayout layout = measureBranchLayout(root);
+        int titleHeight = this.font.lineHeight + 4;
+        int panelHeight = PANEL_INSET + titleHeight + layout.height() + PANEL_INSET;
         int bottom = top + panelHeight;
+        int panelWidth = right - left;
+        int contentTop = top + PANEL_INSET + titleHeight;
+        int originX = left + Math.max(PANEL_INSET, (panelWidth - layout.width()) / 2);
 
         guiGraphics.fill(left, top, right, bottom, 0xD0181818);
         guiGraphics.renderOutline(left, top, right - left, panelHeight, 0xFF6A6A6A);
-        guiGraphics.drawString(this.font, Component.literal("Tracked recipe tree").withStyle(ChatFormatting.YELLOW), left + PANEL_INSET, top + PANEL_INSET, 0xFFFFF27A, false);
+        guiGraphics.drawString(this.font, Component.literal("Tracked recipe branch").withStyle(ChatFormatting.YELLOW), left + PANEL_INSET, top + PANEL_INSET, 0xFFFFF27A, false);
+        guiGraphics.drawString(this.font, Component.literal("Hover a branch for details").withStyle(ChatFormatting.DARK_GRAY), right - PANEL_INSET - this.font.width("Hover a branch for details"), top + PANEL_INSET, 0x808080, false);
 
-        int y = top + PANEL_INSET + this.font.lineHeight + 4;
-        for (int i = 0; i < visibleLines; i++) {
-            TreeLine line = treeLines.get(i);
-            int x = left + PANEL_INSET + (line.depth() * RECIPE_TREE_INDENT);
-            Component prefix = Component.literal(line.depth() == 0 ? "» " : "- ").withStyle(ChatFormatting.DARK_GRAY);
-            Component row = prefix.copy()
-                    .append(line.node().name().copy().withStyle(line.node().role().color()))
-                    .append(Component.literal(roleSuffix(line.node().role())).withStyle(ChatFormatting.GRAY));
-            guiGraphics.drawString(this.font, row, x, y, roleTextColor(line.node().role()), false);
-            y += this.font.lineHeight;
-        }
-
-        if (treeLines.size() > visibleLines) {
-            Component more = Component.literal("+ " + (treeLines.size() - visibleLines) + " more ingredients...").withStyle(ChatFormatting.DARK_GRAY);
-            guiGraphics.drawString(this.font, more, left + PANEL_INSET, bottom - PANEL_INSET - this.font.lineHeight, 0xAAAAAA, false);
-        }
+        renderBranchNode(guiGraphics, layout, originX, contentTop);
 
         return bottom;
     }
 
-    private void collectTreeLines(RecipeTreeNode node, int depth, List<TreeLine> lines) {
-        if (lines.size() >= RECIPE_TREE_MAX_LINES + 1) {
+    private BranchNode buildBranchNode(RecipeTreeNode node, int depth) {
+        List<BranchNode> children = new ArrayList<>();
+        int maxDepth = Config.RECIPE_BRANCH_MAX_DEPTH.getAsInt();
+        int maxChildren = Config.RECIPE_BRANCH_MAX_CHILDREN.getAsInt();
+        if (depth < maxDepth - 1) {
+            int limit = Math.min(node.children().size(), maxChildren);
+            for (int i = 0; i < limit; i++) {
+                children.add(buildBranchNode(node.children().get(i), depth + 1));
+            }
+            int hidden = node.children().size() - limit;
+            if (hidden > 0) {
+                children.add(new BranchNode(ItemStack.EMPTY, Component.literal("+" + hidden + " more"), HighlightRole.BASE, Component.literal("Additional ingredients hidden to keep the branch readable"), List.of()));
+            }
+        } else if (!node.children().isEmpty()) {
+            children.add(new BranchNode(ItemStack.EMPTY, Component.literal("+" + node.children().size() + " more"), HighlightRole.BASE, Component.literal("Additional ingredients hidden to keep the branch readable"), List.of()));
+        }
+
+        return new BranchNode(node.stack(), node.name(), node.role(), node.reason(), List.copyOf(children));
+    }
+
+    private BranchLayout measureBranchLayout(BranchNode node) {
+        List<BranchLayout> children = new ArrayList<>();
+        int childrenWidth = 0;
+        int childrenHeight = 0;
+        for (BranchNode child : node.children()) {
+            BranchLayout childLayout = measureBranchLayout(child);
+            children.add(childLayout);
+            childrenWidth += childLayout.width();
+            childrenHeight = Math.max(childrenHeight, childLayout.height());
+        }
+        if (!children.isEmpty()) {
+            childrenWidth += RECIPE_BRANCH_CHILD_GAP * (children.size() - 1);
+        }
+
+        int nodeWidth = Math.min(RECIPE_BRANCH_MAX_WIDTH, Math.max(72, this.font.width(node.label().getString()) + 18));
+        int width = Math.max(nodeWidth, childrenWidth);
+        int height = this.font.lineHeight + 10;
+        if (!children.isEmpty()) {
+            height += RECIPE_BRANCH_ROW_GAP + childrenHeight;
+        }
+
+        BranchLayout layout = new BranchLayout(node, width, height, children);
+        int nodeX = (width - nodeWidth) / 2;
+        layout.setNode(nodeX, 0, nodeWidth, this.font.lineHeight + 10);
+
+        if (!children.isEmpty()) {
+            int childX = (width - childrenWidth) / 2;
+            int childY = this.font.lineHeight + 10 + RECIPE_BRANCH_ROW_GAP;
+            for (BranchLayout childLayout : children) {
+                childLayout.place(childX, childY);
+                childX += childLayout.width() + RECIPE_BRANCH_CHILD_GAP;
+            }
+        }
+
+        return layout;
+    }
+
+    private void renderBranchNode(GuiGraphics guiGraphics, BranchLayout layout, int originX, int originY) {
+        int x = originX + layout.nodeX();
+        int y = originY + layout.nodeY();
+        int width = layout.nodeWidth();
+        int height = layout.nodeHeight();
+        int borderColor = roleBorderColor(layout.node().role());
+        int fillColor = roleFillColor(layout.node().role());
+        branchHitBoxes.add(new BranchHitBox(x, y, width, height, layout.node().reason(), layout.node().stack()));
+
+        guiGraphics.fill(x, y, x + width, y + height, fillColor);
+        guiGraphics.fill(x, y, x + width, y + 1, borderColor);
+        guiGraphics.fill(x, y + height - 1, x + width, y + height, borderColor);
+        guiGraphics.fill(x, y, x + 1, y + height, borderColor);
+        guiGraphics.fill(x + width - 1, y, x + width, y + height, borderColor);
+
+        String text = layout.node().label().getString();
+        String clipped = text;
+        int available = width - 10;
+        if (this.font.width(text) > available) {
+            clipped = this.font.plainSubstrByWidth(text, available);
+            if (!clipped.equals(text) && clipped.length() < text.length()) {
+                clipped = clipped.trim();
+                if (!clipped.endsWith("...")) {
+                    clipped = clipped + "...";
+                }
+            }
+        }
+        int textX = x + Math.max(4, (width - this.font.width(clipped)) / 2);
+        int textY = y + Math.max(3, (height - this.font.lineHeight) / 2);
+        guiGraphics.drawString(this.font, clipped, textX, textY, roleTextColor(layout.node().role()), false);
+
+        if (layout.children().isEmpty()) {
             return;
         }
 
-        lines.add(new TreeLine(node, depth));
-        for (RecipeTreeNode child : node.children()) {
-            collectTreeLines(child, depth + 1, lines);
-            if (lines.size() >= RECIPE_TREE_MAX_LINES + 1) {
-                return;
-            }
+        int parentCenterX = x + width / 2;
+        int branchY = y + height + RECIPE_BRANCH_ROW_GAP / 2;
+        int leftMost = Integer.MAX_VALUE;
+        int rightMost = Integer.MIN_VALUE;
+        for (BranchLayout child : layout.children()) {
+            int childCenterX = originX + child.nodeX() + child.nodeWidth() / 2;
+            leftMost = Math.min(leftMost, childCenterX);
+            rightMost = Math.max(rightMost, childCenterX);
+        }
+
+        guiGraphics.fill(parentCenterX, y + height, parentCenterX + 1, branchY, borderColor);
+        if (layout.children().size() > 1) {
+            guiGraphics.fill(leftMost, branchY, rightMost + 1, branchY + 1, borderColor);
+        }
+        for (BranchLayout child : layout.children()) {
+            int childCenterX = originX + child.nodeX() + child.nodeWidth() / 2;
+            guiGraphics.fill(childCenterX, branchY, childCenterX + 1, originY + child.nodeY(), borderColor);
+            renderBranchNode(guiGraphics, child, originX, originY);
         }
     }
 
-    private String roleSuffix(HighlightRole role) {
-        return switch (role) {
-            case TARGET -> "  target";
-            case INTERMEDIATE -> "  crafted";
-            case BASE -> "  base";
-        };
+    private void renderBranchTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        for (BranchHitBox hitBox : branchHitBoxes) {
+            if (mouseX < hitBox.x() || mouseX >= hitBox.x() + hitBox.width() || mouseY < hitBox.y() || mouseY >= hitBox.y() + hitBox.height()) {
+                continue;
+            }
+
+            guiGraphics.renderComponentTooltip(this.font, List.of(
+                    Component.literal("MCAI branch").withStyle(ChatFormatting.YELLOW),
+                    hitBox.reason().copy().withStyle(ChatFormatting.GRAY),
+                    hitBox.stack().isEmpty()
+                            ? Component.literal("Click to inspect").withStyle(ChatFormatting.DARK_GRAY)
+                            : Component.literal("Click to open in JEI").withStyle(ChatFormatting.DARK_GRAY)), mouseX, mouseY);
+            return;
+        }
     }
 
     private int roleTextColor(HighlightRole role) {
@@ -358,6 +488,22 @@ public class AiChatScreen extends Screen {
             case TARGET -> 0xFF8EFFFF;
             case INTERMEDIATE -> 0xFFFFF27A;
             case BASE -> 0xFFA8FFB3;
+        };
+    }
+
+    private int roleBorderColor(HighlightRole role) {
+        return switch (role) {
+            case TARGET -> 0xFF8EFFFF;
+            case INTERMEDIATE -> 0xFFFFF27A;
+            case BASE -> 0xFFA8FFB3;
+        };
+    }
+
+    private int roleFillColor(HighlightRole role) {
+        return switch (role) {
+            case TARGET -> 0xD0203B4F;
+            case INTERMEDIATE -> 0xD03D3320;
+            case BASE -> 0xD0203D28;
         };
     }
 
@@ -403,23 +549,22 @@ public class AiChatScreen extends Screen {
         int panelTop = PADDING + 34;
         int panelBottom = this.height - PADDING - INPUT_HEIGHT - 10;
         int treeBottom = RecipeTracker.get().recipeTree().isPresent()
-                ? panelTop + recipeTreePanelHeight()
+                ? panelTop + recipeBranchPanelHeight()
                 : panelTop;
         int transcriptTop = treeBottom + (treeBottom > panelTop ? 6 : 0);
         int visibleLines = visibleLineCount(transcriptTop + PANEL_INSET, panelBottom - PANEL_INSET);
         return Math.max(0, wrappedTranscript.size() - visibleLines);
     }
 
-    private int recipeTreePanelHeight() {
+    private int recipeBranchPanelHeight() {
         RecipeTracker tracker = RecipeTracker.get();
         if (tracker.recipeTree().isEmpty()) {
             return 0;
         }
 
-        List<TreeLine> treeLines = new ArrayList<>();
-        collectTreeLines(tracker.recipeTree().get(), 0, treeLines);
-        int visibleLines = Math.min(treeLines.size(), RECIPE_TREE_MAX_LINES);
-        return PANEL_INSET + this.font.lineHeight + 4 + (visibleLines * this.font.lineHeight) + PANEL_INSET;
+        BranchNode root = buildBranchNode(tracker.recipeTree().get(), 0);
+        BranchLayout layout = measureBranchLayout(root);
+        return PANEL_INSET + this.font.lineHeight + 4 + layout.height() + PANEL_INSET;
     }
 
     private void markTranscriptDirty() {
@@ -432,6 +577,8 @@ public class AiChatScreen extends Screen {
         String status = "Model: " + Config.OLLAMA_MODEL.get()
                 + " | Profile: " + Config.CONTEXT_PROFILE.get()
                 + " | Tone: " + Config.RESPONSE_TONE.get()
+                + " | Mode: " + Config.CHAT_MODE.get()
+                + " | Share: " + AiChatManager.get().describeShareWhitelistCompact()
                 + " | Context: "
                 + contextFlag("Inv", Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean())
                 + ", " + contextFlag("Player", Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean())
@@ -470,6 +617,91 @@ public class AiChatScreen extends Screen {
         }
     }
 
-    private record TreeLine(RecipeTreeNode node, int depth) {
+    private record BranchNode(ItemStack stack, Component label, HighlightRole role, Component reason, List<BranchNode> children) {
+    }
+
+    private static final class BranchLayout {
+        private final BranchNode node;
+        private final int width;
+        private final int height;
+        private final List<BranchLayout> children;
+        private int nodeX;
+        private int nodeY;
+        private int nodeWidth;
+        private int nodeHeight;
+
+        private BranchLayout(BranchNode node, int width, int height, List<BranchLayout> children) {
+            this.node = node;
+            this.width = width;
+            this.height = height;
+            this.children = children;
+        }
+
+        private void setNode(int x, int y, int width, int height) {
+            this.nodeX = x;
+            this.nodeY = y;
+            this.nodeWidth = width;
+            this.nodeHeight = height;
+        }
+
+        private void place(int x, int y) {
+            int offsetX = x + (width - nodeWidth) / 2;
+            int offsetY = y;
+            setNode(offsetX, offsetY, nodeWidth, nodeHeight);
+            if (children.isEmpty()) {
+                return;
+            }
+
+            int childWidth = 0;
+            for (BranchLayout child : children) {
+                childWidth += child.width();
+            }
+            childWidth += RECIPE_BRANCH_CHILD_GAP * (children.size() - 1);
+
+            int childX = x + (width - childWidth) / 2;
+            int childY = y + nodeHeight + RECIPE_BRANCH_ROW_GAP;
+            for (BranchLayout child : children) {
+                child.place(childX, childY);
+                childX += child.width() + RECIPE_BRANCH_CHILD_GAP;
+            }
+        }
+
+        private BranchNode node() {
+            return node;
+        }
+
+        private int width() {
+            return width;
+        }
+
+        private int height() {
+            return height;
+        }
+
+        private List<BranchLayout> children() {
+            return children;
+        }
+
+        private int nodeX() {
+            return nodeX;
+        }
+
+        private int nodeY() {
+            return nodeY;
+        }
+
+        private int nodeWidth() {
+            return nodeWidth;
+        }
+
+        private int nodeHeight() {
+            return nodeHeight;
+        }
+    }
+
+    private record BranchHitBox(int x, int y, int width, int height, Component reason, ItemStack stack) {
+        private boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
     }
 }

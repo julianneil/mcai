@@ -150,7 +150,7 @@ public class RecipeTracker {
 
         boolean alreadyVisited = !visitedOutputs.add(result.getItem());
         if (alreadyVisited) {
-            return Optional.of(new RecipeTreeNode(result.getHoverName(), resultRole, Component.literal("Already shown earlier in this recipe tree"), List.of()));
+            return Optional.of(new RecipeTreeNode(result.copy(), result.getHoverName(), resultRole, Component.literal("Already shown earlier in this recipe tree"), List.of()));
         }
 
         Component resultName = result.getHoverName();
@@ -170,16 +170,16 @@ public class RecipeTracker {
 
                 RecipeTreeNode childNode = childRecipe
                         .flatMap(child -> buildRecipeTree(level, child, depth + 1, visitedOutputs, resultName))
-                        .orElseGet(() -> new RecipeTreeNode(option.getHoverName(), ingredientRole, ingredientReason, List.of()));
+                        .orElseGet(() -> new RecipeTreeNode(option.copy(), option.getHoverName(), ingredientRole, ingredientReason, List.of()));
                 children.add(childNode);
 
                 if (highlightedItems.size() >= MAX_TRACKED_ITEMS) {
-                    return Optional.of(new RecipeTreeNode(resultName, resultRole, resultReason, List.copyOf(children)));
+                    return Optional.of(new RecipeTreeNode(result.copy(), resultName, resultRole, resultReason, List.copyOf(children)));
                 }
             }
         }
 
-        return Optional.of(new RecipeTreeNode(resultName, resultRole, resultReason, List.copyOf(children)));
+        return Optional.of(new RecipeTreeNode(result.copy(), resultName, resultRole, resultReason, List.copyOf(children)));
     }
 
     private void addHighlight(Item item, HighlightRole role, Component reason) {
@@ -248,7 +248,7 @@ public class RecipeTracker {
     public record HighlightInfo(HighlightRole role, Component reason) {
     }
 
-    public record RecipeTreeNode(Component name, HighlightRole role, Component reason, List<RecipeTreeNode> children) {
+    public record RecipeTreeNode(ItemStack stack, Component name, HighlightRole role, Component reason, List<RecipeTreeNode> children) {
     }
 
     public record TrackResult(boolean success, Component message) {
