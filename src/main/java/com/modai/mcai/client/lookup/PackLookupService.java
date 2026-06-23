@@ -7,6 +7,7 @@ import net.minecraft.world.item.Item;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforgespi.language.IModInfo;
 
+import java.util.Locale;
 import java.util.Optional;
 
 public class PackLookupService {
@@ -40,12 +41,12 @@ public class PackLookupService {
     }
 
     private Item findBestItem(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         Item best = null;
         int bestScore = 0;
         for (Item item : BuiltInRegistries.ITEM) {
             ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
-            String haystack = (item.getDescription().getString() + " " + id).toLowerCase();
+            String haystack = (item.getDescription().getString() + " " + id).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, id);
             if (score > bestScore) {
                 bestScore = score;
@@ -56,12 +57,12 @@ public class PackLookupService {
     }
 
     private Block findBestBlock(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         Block best = null;
         int bestScore = 0;
         for (Block block : BuiltInRegistries.BLOCK) {
             ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
-            String haystack = (block.getName().getString() + " " + id).toLowerCase();
+            String haystack = (block.getName().getString() + " " + id).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, id);
             if (score > bestScore) {
                 bestScore = score;
@@ -72,11 +73,11 @@ public class PackLookupService {
     }
 
     private IModInfo findBestMod(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         IModInfo best = null;
         int bestScore = 0;
         for (IModInfo mod : ModList.get().getMods()) {
-            String haystack = (mod.getDisplayName() + " " + mod.getModId() + " " + mod.getVersion()).toLowerCase();
+            String haystack = (mod.getDisplayName() + " " + mod.getModId() + " " + mod.getVersion()).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, ResourceLocation.tryParse(mod.getModId()));
             if (score > bestScore) {
                 bestScore = score;

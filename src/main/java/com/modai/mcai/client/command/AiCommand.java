@@ -3,6 +3,7 @@ package com.modai.mcai.client.command;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.modai.mcai.Config;
+import com.modai.mcai.client.OllamaClient.AiMessage;
 import com.modai.mcai.client.AiChatManager.HistoryExportResult;
 import com.modai.mcai.client.AiChatManager;
 import com.modai.mcai.client.bookmark.BookmarkManager;
@@ -28,6 +29,7 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
+import java.util.Locale;
 import java.util.LinkedHashSet;
 
 public class AiCommand {
@@ -341,7 +343,7 @@ public class AiCommand {
             return;
         }
 
-        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "note", text, preview(text, 80));
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "note", text, preview(text));
         minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
                 .append(result.message()), false);
     }
@@ -361,7 +363,7 @@ public class AiCommand {
         String note = AiChatManager.get().getHistory().stream()
                 .filter(message -> "assistant".equals(message.role()))
                 .reduce((first, second) -> second)
-                .map(message -> message.content())
+                .map(AiMessage::content)
                 .orElse("");
         BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "question", prompt, note);
         minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
@@ -608,12 +610,12 @@ public class AiCommand {
     }
 
     private static Item findBestItem(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         Item best = null;
         int bestScore = 0;
         for (Item item : BuiltInRegistries.ITEM) {
             ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
-            String haystack = (item.getDescription().getString() + " " + id).toLowerCase();
+            String haystack = (item.getDescription().getString() + " " + id).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, id);
             if (score > bestScore) {
                 bestScore = score;
@@ -624,12 +626,12 @@ public class AiCommand {
     }
 
     private static Block findBestBlock(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         Block best = null;
         int bestScore = 0;
         for (Block block : BuiltInRegistries.BLOCK) {
             ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
-            String haystack = (block.getName().getString() + " " + id).toLowerCase();
+            String haystack = (block.getName().getString() + " " + id).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, id);
             if (score > bestScore) {
                 bestScore = score;
@@ -640,11 +642,11 @@ public class AiCommand {
     }
 
     private static IModInfo findBestMod(String query) {
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         IModInfo best = null;
         int bestScore = 0;
         for (IModInfo mod : ModList.get().getMods()) {
-            String haystack = (mod.getDisplayName() + " " + mod.getModId() + " " + mod.getVersion()).toLowerCase();
+            String haystack = (mod.getDisplayName() + " " + mod.getModId() + " " + mod.getVersion()).toLowerCase(Locale.ROOT);
             int score = scoreLookup(haystack, needle, ResourceLocation.tryParse(mod.getModId()));
             if (score > bestScore) {
                 bestScore = score;
@@ -800,7 +802,7 @@ public class AiCommand {
             return values;
         }
 
-        for (String token : whitelist.toLowerCase().split(",")) {
+        for (String token : whitelist.toLowerCase(Locale.ROOT).split(",")) {
             String trimmed = token.trim();
             if (!trimmed.isEmpty()) {
                 values.add(trimmed);
@@ -810,7 +812,7 @@ public class AiCommand {
     }
 
     private static String normalizeShareCategory(String category) {
-        String value = category == null ? "" : category.trim().toLowerCase();
+        String value = category == null ? "" : category.trim().toLowerCase(Locale.ROOT);
         return switch (value) {
             case "player", "inventory", "modpack", "recipe", "quest", "all" -> value;
             default -> null;
@@ -825,7 +827,8 @@ public class AiCommand {
         return message;
     }
 
-    private static String preview(String text, int limit) {
+    private static String preview(String text) {
+        int limit = 80;
         String trimmed = text == null ? "" : text.trim();
         if (trimmed.length() <= limit) {
             return trimmed;

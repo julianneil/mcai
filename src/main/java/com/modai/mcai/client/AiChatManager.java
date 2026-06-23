@@ -2,7 +2,6 @@ package com.modai.mcai.client;
 
 import com.modai.mcai.Config;
 import com.modai.mcai.client.OllamaClient.AiMessage;
-import com.modai.mcai.client.OfflineFallbackResponder;
 import com.modai.mcai.client.context.InventoryContextProvider;
 import com.modai.mcai.client.context.ModpackContextProvider;
 import com.modai.mcai.client.context.PlayerContextProvider;
@@ -22,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedList;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -36,7 +36,7 @@ public class AiChatManager {
     private final QuestContextProvider questContextProvider = new QuestContextProvider();
     private final RecipeContextProvider recipeContextProvider = new RecipeContextProvider();
     private final OfflineFallbackResponder offlineFallbackResponder = new OfflineFallbackResponder();
-    private final List<AiMessage> history = new ArrayList<>();
+    private final LinkedList<AiMessage> history = new LinkedList<>();
 
     private AiChatManager() {
     }
@@ -60,7 +60,7 @@ public class AiChatManager {
     }
 
     public synchronized boolean canRetryLastResponse() {
-        return !history.isEmpty() && "assistant".equals(history.get(history.size() - 1).role());
+        return !history.isEmpty() && "assistant".equals(history.getLast().role());
     }
 
     public void ask(String userMessage, Consumer<String> onReply, Consumer<Throwable> onError) {
@@ -88,7 +88,7 @@ public class AiChatManager {
                 return false;
             }
 
-            AiMessage removedAssistant = history.remove(history.size() - 1);
+            AiMessage removedAssistant = history.removeLast();
             String userMessage = getLastUserMessage().orElse("");
             List<AiMessage> requestMessages = new ArrayList<>();
             requestMessages.add(new AiMessage("system", buildSystemPrompt(userMessage)));
@@ -195,7 +195,7 @@ public class AiChatManager {
 
     private boolean isShareAllowed(String category) {
         String whitelist = Config.SHARE_WHITELIST.get();
-        if (whitelist == null || whitelist.isBlank()) {
+        if (whitelist.isBlank()) {
             return false;
         }
 
@@ -299,7 +299,7 @@ public class AiChatManager {
 
     private void trimHistory() {
         while (history.size() > MAX_HISTORY_MESSAGES) {
-            history.remove(0);
+            history.removeFirst();
         }
     }
 

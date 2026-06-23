@@ -19,6 +19,7 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 public class AiChatScreen extends Screen {
@@ -35,7 +36,7 @@ public class AiChatScreen extends Screen {
     private static final int RECIPE_BRANCH_CHILD_GAP = 12;
     private static final int RECIPE_BRANCH_MAX_WIDTH = 220;
 
-    private final List<Component> transcript = new ArrayList<>();
+    private final LinkedList<Component> transcript = new LinkedList<>();
     private final List<FormattedCharSequence> wrappedTranscript = new ArrayList<>();
     private final List<BranchHitBox> branchHitBoxes = new ArrayList<>();
 
@@ -292,9 +293,9 @@ public class AiChatScreen extends Screen {
 
     private void removeThinkingLine() {
         if (!transcript.isEmpty()) {
-            Component lastLine = transcript.get(transcript.size() - 1);
+            Component lastLine = transcript.getLast();
             if (lastLine.getString().equals("MCAI is thinking...")) {
-                transcript.remove(transcript.size() - 1);
+                transcript.removeLast();
                 markTranscriptDirty();
             }
         }
@@ -305,10 +306,10 @@ public class AiChatScreen extends Screen {
             return;
         }
 
-        Component lastLine = transcript.get(transcript.size() - 1);
+        Component lastLine = transcript.getLast();
         String text = lastLine.getString();
         if (text.startsWith("MCAI: ")) {
-            transcript.remove(transcript.size() - 1);
+            transcript.removeLast();
             markTranscriptDirty();
         }
     }
@@ -645,9 +646,7 @@ public class AiChatScreen extends Screen {
         }
 
         private void place(int x, int y) {
-            int offsetX = x + (width - nodeWidth) / 2;
-            int offsetY = y;
-            setNode(offsetX, offsetY, nodeWidth, nodeHeight);
+        setNode(x + (width - nodeWidth) / 2, y, nodeWidth, nodeHeight);
             if (children.isEmpty()) {
                 return;
             }

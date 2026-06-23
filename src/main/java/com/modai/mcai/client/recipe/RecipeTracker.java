@@ -33,7 +33,7 @@ public class RecipeTracker {
     private final Map<Item, HighlightInfo> highlightedItems = new HashMap<>();
     private Component targetName = Component.empty();
     private ItemStack targetStack = ItemStack.EMPTY;
-    private Optional<RecipeTreeNode> recipeTree = Optional.empty();
+    private RecipeTreeNode recipeTree;
 
     private RecipeTracker() {
     }
@@ -51,7 +51,7 @@ public class RecipeTracker {
     }
 
     public Optional<RecipeTreeNode> recipeTree() {
-        return recipeTree;
+        return Optional.ofNullable(recipeTree);
     }
 
     public ItemStack targetStack() {
@@ -73,7 +73,7 @@ public class RecipeTracker {
         highlightedItems.clear();
         targetName = Component.empty();
         targetStack = ItemStack.EMPTY;
-        recipeTree = Optional.empty();
+        recipeTree = null;
     }
 
     public TrackResult track(String query) {
@@ -93,7 +93,7 @@ public class RecipeTracker {
         ItemStack result = holder.value().getResultItem(level.registryAccess());
         targetName = result.getHoverName();
         targetStack = result.copy();
-        recipeTree = buildRecipeTree(level, holder, 0, new HashSet<>(), targetName);
+        recipeTree = buildRecipeTree(level, holder, 0, new HashSet<>(), targetName).orElse(null);
 
         return TrackResult.success(Component.literal("Tracking recipe tree for ").withStyle(ChatFormatting.GREEN)
                 .append(targetName.copy().withStyle(ChatFormatting.AQUA))
