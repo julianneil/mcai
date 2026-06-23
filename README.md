@@ -7,10 +7,15 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 ## Features
 
 - `/ai <message>` in-game chat command.
+- `/mcai tone terse|balanced|detailed` response-style control.
+- `/mcai history`, `/mcai history clear`, `/mcai history retry`, and `/mcai history export`.
 - `G` keybind for the MCAI chat GUI.
 - Inventory, player, modpack, and recipe-aware prompt context.
+- FTB Quests context and progression suggestions when the quest mod is installed.
 - Recipe grounding from loaded client recipes.
 - Recipe tracking with colored inventory highlights and a recipe tree panel.
+- Quick lookups with `/mcai item`, `/mcai block`, and `/mcai mod`.
+- Quest summary and next-step guidance with `/mcai quests` and `/mcai quests next`.
 - Local-only AI inference through Ollama by default.
 
 ## Requirements
@@ -74,6 +79,7 @@ includeInventoryContext = true
 includePlayerContext = true
 includeModpackContext = true
 includeRecipeContext = true
+includeQuestContext = true
 maxRecipeContextResults = 8
 requestTimeoutSeconds = 120
 ```
@@ -83,6 +89,7 @@ Notes:
 - `ollamaEndpoint` should point to your local Ollama server.
 - `ollamaModel` must match a model installed with `ollama pull`.
 - Context toggles control what game information MCAI includes in prompts.
+- `includeQuestContext` enables soft FTB Quests integration when the mod is present.
 - Increase `requestTimeoutSeconds` if your model is slow on your hardware.
 
 ## In-game commands
@@ -116,6 +123,31 @@ Examples:
 /mcai track iron pickaxe
 ```
 
+Change the assistant tone:
+
+```text
+/mcai tone terse
+/mcai tone balanced
+/mcai tone detailed
+```
+
+Inspect chat history:
+
+```text
+/mcai history
+/mcai history clear
+/mcai history retry
+/mcai history export
+```
+
+Look up registry and mod data:
+
+```text
+/mcai item iron pickaxe
+/mcai block furnace
+/mcai mod ftb quests
+```
+
 Open a tracked recipe in JEI, if JEI is installed:
 
 ```text
@@ -141,17 +173,26 @@ Clear active recipe highlights:
 /mcai cleartrack
 ```
 
+Check quest status and next steps:
+
+```text
+/mcai quests
+/mcai quests next
+```
+
 ## GUI and keybinds
 
 - Press `G` to open the MCAI chat GUI.
 - The GUI shows conversation history, model/context status, and active recipe tracking status.
 - When a recipe is tracked, the GUI displays a compact recipe tree panel.
+- The GUI also reflects the current tone and context toggles.
 - If JEI is installed, JEI recipe pages show an MCAI `Track` button for the visible recipe output.
 - Inventory/container screens highlight tracked recipe items by role:
   - Target output.
   - Crafted intermediate ingredient.
   - Base ingredient.
 - Hover a highlighted slot to see why the item is highlighted.
+- When FTB Quests is installed, MCAI can use quest context to explain likely next progression steps.
 
 ## Troubleshooting
 

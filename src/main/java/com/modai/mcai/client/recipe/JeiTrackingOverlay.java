@@ -11,12 +11,12 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
 public class JeiTrackingOverlay {
     private static final String JEI_RECIPES_GUI_CLASS = "mezz.jei.gui.recipes.RecipesGui";
-    private static final String JEI_OUTPUT_ROLE_NAME = "OUTPUT";
     private static final int BUTTON_WIDTH = 44;
     private static final int BUTTON_HEIGHT = 14;
     private static final int BUTTON_GAP = 4;
@@ -34,7 +34,7 @@ public class JeiTrackingOverlay {
         int mouseX = event.getMouseX();
         int mouseY = event.getMouseY();
         if (buttons.isEmpty()) {
-            renderStatus(guiGraphics, "MCAI: JEI recipe detected, no output found", 8, 8, 0xFFFF7777);
+            renderStatus(guiGraphics, "MCAI: JEI recipe detected, but no trackable output slot was found", 8, 8, 0xFFFF7777);
             return;
         }
 
@@ -77,8 +77,7 @@ public class JeiTrackingOverlay {
 
     private static List<TrackButton> visibleTrackButtons(Screen screen) {
         try {
-            Object layouts = fieldValue(screen, "layouts");
-            List<?> layoutsWithButtons = List.copyOf((List<?>) fieldValue(layouts, "recipeLayoutsWithButtons"));
+            List<?> layoutsWithButtons = visibleRecipeLayouts(screen);
             List<TrackButton> buttons = new ArrayList<>();
             for (Object layoutWithButtons : layoutsWithButtons) {
                 Object recipeLayout = invoke(layoutWithButtons, "getRecipeLayout");
@@ -99,34 +98,118 @@ public class JeiTrackingOverlay {
     }
 
     private static Optional<ItemStack> outputStack(Object recipeLayout) throws ReflectiveOperationException {
+        Optional<ItemStack> recipeResult = recipeResultStack(recipeLayout);
+        if (recipeResult.isPresent()) {
+            return recipeResult;
+        }
+
         Object slotsView = invoke(recipeLayout, "getRecipeSlotsView");
         List<?> slotViews = (List<?>) invoke(slotsView, "getSlotViews");
+        List<CandidateStack> candidates = new ArrayList<>();
+        int order = 0;
         for (Object slotView : slotViews) {
             Object role = invoke(slotView, "getRole");
-            if (!JEI_OUTPUT_ROLE_NAME.equals(roleName(role))) {
+            Optional<ItemStack> stack = displayedStack(slotView);
+            if (stack.isEmpty()) {
+                stack = firstItemStack(slotView);
+            }
+            if (stack.isEmpty()) {
                 continue;
             }
 
-            Optional<?> displayedStack = (Optional<?>) invoke(slotView, "getDisplayedItemStack");
-            if (displayedStack.isPresent() && displayedStack.get() instanceof ItemStack stack && !stack.isEmpty()) {
+            String roleName = roleName(role);
+            int priority = isOutputRole(roleName) ? 0 : 1;
+            candidates.add(new CandidateStack(stack.get(), priority, order++));
+        }
+
+        Optional<ItemStack> bestSlotStack = candidates.stream()
+                .min(Comparator.comparingInt(CandidateStack::priority).thenComparing(Comparator.comparingInt(CandidateStack::order).reversed()))
+                .map(CandidateStack::stack);
+        return bestSlotStack;
+    }
+
+    private static Optional<ItemStack> recipeResultStack(Object recipeLayout) {
+        try {
+            Object recipe = invoke(recipeLayout, "getRecipe");
+            Optional<ItemStack> result = invokeRecipeResult(recipe);
+            if (result.isPresent()) {
+                return result;
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Fall through to empty.
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<ItemStack> invokeRecipeResult(Object recipe) throws ReflectiveOperationException {
+        try {
+            Object result = invoke(recipe, "getResultItem", Minecraft.getInstance().level.registryAccess());
+            if (result instanceof ItemStack stack && !stack.isEmpty()) {
                 return Optional.of(stack.copy());
             }
+        } catch (ReflectiveOperationException | NullPointerException ignored) {
+            // Try other signatures below.
+        }
 
-            Optional<ItemStack> firstStack = firstItemStack(slotView);
-            if (firstStack.isPresent()) {
-                return firstStack;
+        try {
+            Object result = invoke(recipe, "getResultItem");
+            if (result instanceof ItemStack stack && !stack.isEmpty()) {
+                return Optional.of(stack.copy());
             }
+        } catch (ReflectiveOperationException ignored) {
+            // No-op.
+        }
+
+        return Optional.empty();
+    }
+
+    private static Optional<ItemStack> displayedStack(Object slotView) throws ReflectiveOperationException {
+        try {
+            Object displayedStack = invoke(slotView, "getDisplayedItemStack");
+            if (displayedStack instanceof Optional<?> optional && optional.isPresent() && optional.get() instanceof ItemStack stack && !stack.isEmpty()) {
+                return Optional.of(stack.copy());
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Fall through to other accessors.
+        }
+        try {
+            Object displayedStack = invoke(slotView, "getDisplayedStack");
+            if (displayedStack instanceof Optional<?> optional && optional.isPresent() && optional.get() instanceof ItemStack stack && !stack.isEmpty()) {
+                return Optional.of(stack.copy());
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Fall through to other accessors.
         }
         return Optional.empty();
     }
 
     private static Optional<ItemStack> firstItemStack(Object slotView) throws ReflectiveOperationException {
-        Object stream = invoke(slotView, "getItemStacks");
-        Object optional = invoke(stream, "findFirst");
-        if (optional instanceof Optional<?> first && first.isPresent() && first.get() instanceof ItemStack stack && !stack.isEmpty()) {
-            return Optional.of(stack.copy());
+        try {
+            Object stream = invoke(slotView, "getItemStacks");
+            Object optional = invoke(stream, "findFirst");
+            if (optional instanceof Optional<?> first && first.isPresent() && first.get() instanceof ItemStack stack && !stack.isEmpty()) {
+                return Optional.of(stack.copy());
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Fall through to other accessors.
+        }
+        try {
+            Object stacks = invoke(slotView, "getItemStacksWithFallback");
+            Object optional = invoke(stacks, "findFirst");
+            if (optional instanceof Optional<?> first && first.isPresent() && first.get() instanceof ItemStack stack && !stack.isEmpty()) {
+                return Optional.of(stack.copy());
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // No-op.
         }
         return Optional.empty();
+    }
+
+    private static boolean isOutputRole(String roleName) {
+        return switch (roleName) {
+            case "OUTPUT", "OUTPUT_SLOT", "RESULT", "RESULT_SLOT" -> true;
+            default -> false;
+        };
     }
 
     private static String roleName(Object role) {
@@ -198,5 +281,31 @@ public class JeiTrackingOverlay {
         private boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX < x + BUTTON_WIDTH && mouseY >= y && mouseY < y + BUTTON_HEIGHT;
         }
+    }
+
+    private static List<?> visibleRecipeLayouts(Screen screen) throws ReflectiveOperationException {
+        try {
+            Object logic = fieldValue(screen, "logic");
+            Object area = recipeLayoutsArea(screen);
+            int recipeLayoutsAreaHeight = ((Number) invoke(area, "getHeight")).intValue();
+            Object menu = invoke(screen, "getParentContainerMenu");
+            Object bookmarks = fieldValue(screen, "bookmarks");
+            return List.copyOf((List<?>) invoke(logic, "getVisibleRecipeLayoutsWithButtons", recipeLayoutsAreaHeight, 4, menu, bookmarks, screen));
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            Object layouts = fieldValue(screen, "layouts");
+            return List.copyOf((List<?>) fieldValue(layouts, "recipeLayoutsWithButtons"));
+        }
+    }
+
+    private static Object recipeLayoutsArea(Screen screen) throws ReflectiveOperationException {
+        Object area = fieldValue(screen, "area");
+        int x = ((Number) invoke(area, "getX")).intValue() + 6;
+        int y = ((Number) invoke(area, "getY")).intValue() + ((Number) fieldValue(screen, "headerHeight")).intValue() + 2;
+        int width = ((Number) invoke(area, "getWidth")).intValue() - 12;
+        int height = ((Number) invoke(area, "getHeight")).intValue() - ((Number) fieldValue(screen, "headerHeight")).intValue() - 8;
+        return new net.minecraft.client.renderer.Rect2i(x, y, width, height);
+    }
+
+    private record CandidateStack(ItemStack stack, int priority, int order) {
     }
 }

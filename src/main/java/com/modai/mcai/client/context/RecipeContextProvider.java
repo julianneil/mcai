@@ -10,12 +10,16 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforgespi.language.IModInfo;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public class RecipeContextProvider {
@@ -31,6 +35,7 @@ public class RecipeContextProvider {
         }
 
         List<RecipeMatch> matches = new ArrayList<>();
+        Map<String, String> modNamesById = loadedModNames();
         for (RecipeHolder<?> holder : level.getRecipeManager().getRecipes()) {
             Recipe<?> recipe = holder.value();
             ItemStack result = recipe.getResultItem(level.registryAccess());
@@ -38,9 +43,11 @@ public class RecipeContextProvider {
                 continue;
             }
 
-            int score = scoreRecipe(holder, recipe, result, queryTerms);
+            int score = scoreRecipe(holder, recipe, result, queryTerms, modNamesById);
             if (score > 0) {
-                matches.add(new RecipeMatch(holder, recipe, result, score));
+                ResourceLocation resultId = BuiltInRegistries.ITEM.getKey(result.getItem());
+                String modName = modNamesById.getOrDefault(resultId.getNamespace(), resultId.getNamespace());
+                matches.add(new RecipeMatch(holder, recipe, result, score, modName));
             }
         }
 
@@ -51,32 +58,79 @@ public class RecipeContextProvider {
         matches.sort(Comparator.comparingInt(RecipeMatch::score).reversed()
                 .thenComparing(match -> match.holder().id().toString()));
 
+        List<RecipeGroup> groups = groupMatches(matches);
+
         StringBuilder context = new StringBuilder();
         context.append("Relevant loaded recipe context from this modpack:\n");
-        int limit = Math.min(matches.size(), Config.MAX_RECIPE_CONTEXT_RESULTS.getAsInt());
+        appendMatchedModSummary(context, groups);
+
+        int limit = Math.min(groups.size(), Config.MAX_RECIPE_CONTEXT_RESULTS.getAsInt());
         for (int i = 0; i < limit; i++) {
-            appendRecipe(context, matches.get(i));
+            appendGroup(context, groups.get(i));
         }
 
-        if (matches.size() > limit) {
-            context.append("- ... plus ").append(matches.size() - limit).append(" more matching recipes\n");
+        if (groups.size() > limit) {
+            context.append("- ... plus ").append(groups.size() - limit).append(" more matching recipe groups\n");
         }
 
         return context.toString().trim();
     }
 
-    private void appendRecipe(StringBuilder context, RecipeMatch match) {
-        RecipeHolder<?> holder = match.holder();
-        Recipe<?> recipe = match.recipe();
-        ItemStack result = match.result();
+    private void appendMatchedModSummary(StringBuilder context, List<RecipeGroup> groups) {
+        Map<String, Integer> modCounts = new LinkedHashMap<>();
+        for (RecipeGroup group : groups) {
+            modCounts.merge(group.modName(), 1, Integer::sum);
+        }
+
+        if (modCounts.isEmpty()) {
+            return;
+        }
+
+        context.append("Matched mod sources:\n");
+        int shown = 0;
+        for (Map.Entry<String, Integer> entry : modCounts.entrySet()) {
+            context.append("- ")
+                    .append(entry.getKey())
+                    .append(" (")
+                    .append(entry.getValue())
+                    .append(")\n");
+            shown++;
+            if (shown >= 6) {
+                break;
+            }
+        }
+    }
+
+    private void appendGroup(StringBuilder context, RecipeGroup group) {
+        RecipeMatch primary = group.primary();
+        RecipeHolder<?> holder = primary.holder();
+        Recipe<?> recipe = primary.recipe();
+        ItemStack result = primary.result();
         ResourceLocation resultId = BuiltInRegistries.ITEM.getKey(result.getItem());
 
-        context.append("- Recipe ").append(holder.id()).append('\n');
-        context.append("  Type: ").append(BuiltInRegistries.RECIPE_TYPE.getKey(recipe.getType())).append('\n');
-        context.append("  Output: ").append(result.getCount()).append("x ")
-                .append(result.getHoverName().getString())
+        context.append("- Output: ").append(result.getHoverName().getString())
                 .append(" (").append(resultId).append(")\n");
+        context.append("  Mod: ").append(group.modName())
+                .append(" | Namespace: ").append(resultId.getNamespace()).append('\n');
+        context.append("  Best recipe: ").append(holder.id()).append('\n');
+        context.append("  Type: ").append(BuiltInRegistries.RECIPE_TYPE.getKey(recipe.getType())).append('\n');
         context.append("  Ingredients: ").append(ingredientSummary(recipe)).append('\n');
+
+        if (group.variants().size() > 1) {
+            context.append("  Other variants: ");
+            int shown = 0;
+            for (int i = 1; i < group.variants().size() && shown < 3; i++) {
+                RecipeMatch variant = group.variants().get(i);
+                context.append(variant.holder().id()).append(" (")
+                        .append(BuiltInRegistries.RECIPE_TYPE.getKey(variant.recipe().getType()))
+                        .append(")");
+                shown++;
+                if (shown < Math.min(3, group.variants().size() - 1)) {
+                    context.append("; ");
+                }
+            }
+            context.append('\n');
+        }
     }
 
     private String ingredientSummary(Recipe<?> recipe) {
@@ -106,10 +160,11 @@ public class RecipeContextProvider {
         return String.join("; ", ingredientLines);
     }
 
-    private int scoreRecipe(RecipeHolder<?> holder, Recipe<?> recipe, ItemStack result, List<String> queryTerms) {
+    private int scoreRecipe(RecipeHolder<?> holder, Recipe<?> recipe, ItemStack result, List<String> queryTerms, Map<String, String> modNamesById) {
         String recipeId = holder.id().toString().toLowerCase(Locale.ROOT);
         ResourceLocation resultId = BuiltInRegistries.ITEM.getKey(result.getItem());
-        String resultText = (result.getHoverName().getString() + " " + resultId).toLowerCase(Locale.ROOT);
+        String modName = modNamesById.getOrDefault(resultId.getNamespace(), resultId.getNamespace());
+        String resultText = (result.getHoverName().getString() + " " + resultId + " " + modName).toLowerCase(Locale.ROOT);
         String ingredientText = ingredientSearchText(recipe);
 
         int score = 0;
@@ -119,6 +174,9 @@ public class RecipeContextProvider {
             }
             if (recipeId.contains(term)) {
                 score += 3;
+            }
+            if (modName.toLowerCase(Locale.ROOT).contains(term) || resultId.getNamespace().contains(term)) {
+                score += 4;
             }
             if (ingredientText.contains(term)) {
                 score += 1;
@@ -138,6 +196,34 @@ public class RecipeContextProvider {
         return text.toString().toLowerCase(Locale.ROOT);
     }
 
+    private Map<String, String> loadedModNames() {
+        Map<String, String> modNames = new LinkedHashMap<>();
+        for (IModInfo mod : ModList.get().getMods()) {
+            modNames.put(mod.getModId(), mod.getDisplayName());
+        }
+        return modNames;
+    }
+
+    private List<RecipeGroup> groupMatches(List<RecipeMatch> matches) {
+        Map<ResourceLocation, List<RecipeMatch>> grouped = new LinkedHashMap<>();
+        for (RecipeMatch match : matches) {
+            ResourceLocation outputId = BuiltInRegistries.ITEM.getKey(match.result().getItem());
+            grouped.computeIfAbsent(outputId, ignored -> new ArrayList<>()).add(match);
+        }
+
+        List<RecipeGroup> groups = new ArrayList<>();
+        for (List<RecipeMatch> variants : grouped.values()) {
+            variants.sort(Comparator.comparingInt(RecipeMatch::score).reversed()
+                    .thenComparing(match -> match.holder().id().toString()));
+            RecipeMatch primary = variants.get(0);
+            groups.add(new RecipeGroup(primary.modName(), primary, List.copyOf(variants)));
+        }
+
+        groups.sort(Comparator.comparingInt((RecipeGroup group) -> group.primary().score()).reversed()
+                .thenComparing(group -> group.primary().holder().id().toString()));
+        return groups;
+    }
+
     private List<String> extractQueryTerms(String userMessage) {
         Set<String> ignored = Set.of("what", "with", "from", "into", "make", "craft", "recipe", "recipes", "using", "need", "does", "this", "that", "have", "current", "inventory", "how", "can", "get", "for", "the", "and");
         Set<String> uniqueTerms = new HashSet<>();
@@ -154,6 +240,9 @@ public class RecipeContextProvider {
         return uniqueTerms.stream().sorted().toList();
     }
 
-    private record RecipeMatch(RecipeHolder<?> holder, Recipe<?> recipe, ItemStack result, int score) {
+    private record RecipeMatch(RecipeHolder<?> holder, Recipe<?> recipe, ItemStack result, int score, String modName) {
+    }
+
+    private record RecipeGroup(String modName, RecipeMatch primary, List<RecipeMatch> variants) {
     }
 }

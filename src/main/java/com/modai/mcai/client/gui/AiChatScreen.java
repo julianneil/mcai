@@ -23,6 +23,8 @@ public class AiChatScreen extends Screen {
     private static final int INPUT_HEIGHT = 20;
     private static final int BUTTON_WIDTH = 60;
     private static final int CLEAR_BUTTON_WIDTH = 54;
+    private static final int RETRY_BUTTON_WIDTH = 58;
+    private static final int EXPORT_BUTTON_WIDTH = 60;
     private static final int BUTTON_GAP = 6;
     private static final int PANEL_INSET = 8;
     private static final int SCROLL_STEP_LINES = 3;
@@ -35,6 +37,8 @@ public class AiChatScreen extends Screen {
     private EditBox input;
     private Button sendButton;
     private Button clearButton;
+    private Button retryButton;
+    private Button exportButton;
     private boolean waitingForReply;
     private boolean transcriptDirty = true;
     private int cachedLineWidth = -1;
@@ -59,8 +63,22 @@ public class AiChatScreen extends Screen {
                 .build();
         addRenderableWidget(sendButton);
 
+        int clearX = this.width - PADDING - CLEAR_BUTTON_WIDTH;
+        int exportX = clearX - BUTTON_GAP - EXPORT_BUTTON_WIDTH;
+        int retryX = exportX - BUTTON_GAP - RETRY_BUTTON_WIDTH;
+
+        retryButton = Button.builder(Component.translatable("screen.mcai.ai_chat.retry"), button -> retryConversation())
+                .bounds(retryX, PADDING - 2, RETRY_BUTTON_WIDTH, INPUT_HEIGHT)
+                .build();
+        addRenderableWidget(retryButton);
+
+        exportButton = Button.builder(Component.translatable("screen.mcai.ai_chat.export"), button -> exportConversation())
+                .bounds(exportX, PADDING - 2, EXPORT_BUTTON_WIDTH, INPUT_HEIGHT)
+                .build();
+        addRenderableWidget(exportButton);
+
         clearButton = Button.builder(Component.translatable("screen.mcai.ai_chat.clear"), button -> clearConversation())
-                .bounds(this.width - PADDING - CLEAR_BUTTON_WIDTH, PADDING - 2, CLEAR_BUTTON_WIDTH, INPUT_HEIGHT)
+                .bounds(clearX, PADDING - 2, CLEAR_BUTTON_WIDTH, INPUT_HEIGHT)
                 .build();
         addRenderableWidget(clearButton);
 
@@ -170,6 +188,49 @@ public class AiChatScreen extends Screen {
         updateControls();
     }
 
+    private void retryConversation() {
+        if (waitingForReply || !AiChatManager.get().canRetryLastResponse()) {
+            return;
+        }
+
+        removeLastAssistantLine();
+        addTranscriptLine(Component.literal("MCAI is retrying the last reply...").withStyle(ChatFormatting.YELLOW));
+        waitingForReply = true;
+        updateControls();
+
+        boolean started = AiChatManager.get().retryLastResponse(
+                reply -> {
+                    removeThinkingLine();
+                    addTranscriptLine(Component.literal("MCAI: ").withStyle(ChatFormatting.AQUA)
+                            .append(Component.literal(reply).withStyle(ChatFormatting.WHITE)));
+                    waitingForReply = false;
+                    updateControls();
+                },
+                error -> {
+                    removeThinkingLine();
+                    addTranscriptLine(Component.literal("MCAI error: ").withStyle(ChatFormatting.RED)
+                            .append(Component.literal(errorText(error)).withStyle(ChatFormatting.WHITE)));
+                    waitingForReply = false;
+                    updateControls();
+                });
+
+        if (!started) {
+            waitingForReply = false;
+            removeThinkingLine();
+            addTranscriptLine(Component.literal("MCAI: No assistant reply to retry yet.").withStyle(ChatFormatting.RED));
+            updateControls();
+        }
+    }
+
+    private void exportConversation() {
+        if (waitingForReply) {
+            return;
+        }
+
+        AiChatManager.HistoryExportResult result = AiChatManager.get().exportHistory();
+        addTranscriptLine(result.message().copy().withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED));
+    }
+
     private String errorText(Throwable error) {
         String message = error.getMessage();
         if (message == null || message.isBlank()) {
@@ -204,6 +265,19 @@ public class AiChatScreen extends Screen {
                 transcript.remove(transcript.size() - 1);
                 markTranscriptDirty();
             }
+        }
+    }
+
+    private void removeLastAssistantLine() {
+        if (transcript.isEmpty()) {
+            return;
+        }
+
+        Component lastLine = transcript.get(transcript.size() - 1);
+        String text = lastLine.getString();
+        if (text.startsWith("MCAI: ")) {
+            transcript.remove(transcript.size() - 1);
+            markTranscriptDirty();
         }
     }
 
@@ -356,10 +430,13 @@ public class AiChatScreen extends Screen {
     private Component statusText() {
         RecipeTracker tracker = RecipeTracker.get();
         String status = "Model: " + Config.OLLAMA_MODEL.get()
+                + " | Profile: " + Config.CONTEXT_PROFILE.get()
+                + " | Tone: " + Config.RESPONSE_TONE.get()
                 + " | Context: "
                 + contextFlag("Inv", Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean())
                 + ", " + contextFlag("Player", Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean())
                 + ", " + contextFlag("Mods", Config.INCLUDE_MODPACK_CONTEXT.getAsBoolean())
+                + ", " + contextFlag("Quests", Config.INCLUDE_QUEST_CONTEXT.getAsBoolean())
                 + ", " + contextFlag("Recipes", Config.INCLUDE_RECIPE_CONTEXT.getAsBoolean());
         Component component = Component.literal(status);
         if (tracker.isTracking()) {
@@ -384,6 +461,12 @@ public class AiChatScreen extends Screen {
         }
         if (clearButton != null) {
             clearButton.active = !waitingForReply && !transcript.isEmpty();
+        }
+        if (retryButton != null) {
+            retryButton.active = !waitingForReply && AiChatManager.get().canRetryLastResponse();
+        }
+        if (exportButton != null) {
+            exportButton.active = !waitingForReply && !AiChatManager.get().getHistory().isEmpty();
         }
     }
 

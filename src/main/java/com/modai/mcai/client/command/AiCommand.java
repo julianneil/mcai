@@ -1,7 +1,10 @@
 package com.modai.mcai.client.command;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.modai.mcai.Config;
+import com.modai.mcai.client.AiChatManager.HistoryExportResult;
 import com.modai.mcai.client.AiChatManager;
+import com.modai.mcai.client.context.QuestContextProvider;
 import com.modai.mcai.client.recipe.JeiRecipeBridge;
 import com.modai.mcai.client.recipe.JeiRecipeBridge.OpenResult;
 import com.modai.mcai.client.recipe.RecipeTracker;
@@ -9,7 +12,13 @@ import com.modai.mcai.client.recipe.RecipeTracker.TrackResult;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.item.Item;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforgespi.language.IModInfo;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 
 import static net.minecraft.commands.Commands.argument;
@@ -47,7 +56,87 @@ public class AiCommand {
                         .executes(context -> {
                             clearRecipeTrack();
                             return 1;
-                        })));
+                        }))
+                .then(literal("history")
+                        .executes(context -> {
+                            showHistoryHelp();
+                            return 1;
+                        })
+                        .then(literal("clear")
+                                .executes(context -> {
+                                    clearChatHistory();
+                                    return 1;
+                                }))
+                        .then(literal("retry")
+                                .executes(context -> {
+                                    retryChat();
+                                    return 1;
+                                }))
+                        .then(literal("export")
+                                .executes(context -> {
+                                    exportChatHistory();
+                                    return 1;
+                                })))
+                .then(literal("tone")
+                        .executes(context -> {
+                            showTone();
+                            return 1;
+                        })
+                        .then(literal(Config.RESPONSE_TONE_TERSE)
+                                .executes(context -> {
+                                    setTone(Config.RESPONSE_TONE_TERSE);
+                                    return 1;
+                                }))
+                        .then(literal(Config.RESPONSE_TONE_BALANCED)
+                                .executes(context -> {
+                                    setTone(Config.RESPONSE_TONE_BALANCED);
+                                    return 1;
+                                }))
+                        .then(literal(Config.RESPONSE_TONE_DETAILED)
+                                .executes(context -> {
+                                    setTone(Config.RESPONSE_TONE_DETAILED);
+                                    return 1;
+                                })))
+                .then(literal("item")
+                        .executes(context -> {
+                            showLookupHelp("item");
+                            return 1;
+                        })
+                        .then(argument("query", StringArgumentType.greedyString())
+                                .executes(context -> {
+                                    lookupItem(StringArgumentType.getString(context, "query"));
+                                    return 1;
+                                })))
+                .then(literal("block")
+                        .executes(context -> {
+                            showLookupHelp("block");
+                            return 1;
+                        })
+                        .then(argument("query", StringArgumentType.greedyString())
+                                .executes(context -> {
+                                    lookupBlock(StringArgumentType.getString(context, "query"));
+                                    return 1;
+                                })))
+                .then(literal("mod")
+                        .executes(context -> {
+                            showLookupHelp("mod");
+                            return 1;
+                        })
+                        .then(argument("query", StringArgumentType.greedyString())
+                                .executes(context -> {
+                                    lookupMod(StringArgumentType.getString(context, "query"));
+                                    return 1;
+                                })))
+                .then(literal("quests")
+                        .executes(context -> {
+                            showQuestSummary();
+                            return 1;
+                        })
+                        .then(literal("next")
+                                .executes(context -> {
+                                    showQuestNextSteps();
+                                    return 1;
+                                }))));
     }
 
     private static void ask(String message) {
@@ -122,6 +211,236 @@ public class AiCommand {
 
         RecipeTracker.get().clear();
         minecraft.player.displayClientMessage(Component.literal("MCAI: Cleared recipe highlights.").withStyle(ChatFormatting.GREEN), false);
+    }
+
+    private static void showHistoryHelp() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI history: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal("clear / retry / export").withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void clearChatHistory() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        AiChatManager.get().clearHistory();
+        minecraft.player.displayClientMessage(Component.literal("MCAI: Cleared chat history.").withStyle(ChatFormatting.GREEN), false);
+    }
+
+    private static void retryChat() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        boolean started = AiChatManager.get().retryLastResponse(
+                reply -> minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(ChatFormatting.AQUA)
+                        .append(Component.literal(reply).withStyle(ChatFormatting.WHITE)), false),
+                error -> minecraft.player.displayClientMessage(Component.literal("MCAI error: ").withStyle(ChatFormatting.RED)
+                        .append(Component.literal(errorText(error)).withStyle(ChatFormatting.WHITE)), false));
+
+        if (!started) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No assistant reply to retry yet.").withStyle(ChatFormatting.RED), false);
+        } else {
+            minecraft.player.displayClientMessage(Component.literal("MCAI is retrying the last reply...").withStyle(ChatFormatting.YELLOW), false);
+        }
+    }
+
+    private static void exportChatHistory() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        HistoryExportResult result = AiChatManager.get().exportHistory();
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void showQuestSummary() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        QuestContextProvider provider = new QuestContextProvider();
+        minecraft.player.displayClientMessage(Component.literal(provider.buildSummary()).withStyle(ChatFormatting.AQUA), false);
+    }
+
+    private static void showQuestNextSteps() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        QuestContextProvider provider = new QuestContextProvider();
+        minecraft.player.displayClientMessage(Component.literal(provider.buildNextProgressionSummary()).withStyle(ChatFormatting.AQUA), false);
+    }
+
+    private static void showLookupHelp(String type) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI ").append(Component.literal(type).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" lookup: use a name, registry id, or mod id").withStyle(ChatFormatting.GRAY)), false);
+    }
+
+    private static void lookupItem(String query) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        Item item = findBestItem(query);
+        if (item == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No item found for ").withStyle(ChatFormatting.RED)
+                    .append(Component.literal(query).withStyle(ChatFormatting.WHITE)), false);
+            return;
+        }
+
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+        minecraft.player.displayClientMessage(Component.literal("Item: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(item.getDescription().getString()).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" (" + id + ")").withStyle(ChatFormatting.DARK_GRAY)), false);
+    }
+
+    private static void lookupBlock(String query) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        Block block = findBestBlock(query);
+        if (block == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No block found for ").withStyle(ChatFormatting.RED)
+                    .append(Component.literal(query).withStyle(ChatFormatting.WHITE)), false);
+            return;
+        }
+
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+        minecraft.player.displayClientMessage(Component.literal("Block: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(block.getName().getString()).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" (" + id + ")").withStyle(ChatFormatting.DARK_GRAY)), false);
+    }
+
+    private static void lookupMod(String query) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        IModInfo mod = findBestMod(query);
+        if (mod == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No mod found for ").withStyle(ChatFormatting.RED)
+                    .append(Component.literal(query).withStyle(ChatFormatting.WHITE)), false);
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("Mod: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(mod.getDisplayName()).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" (" + mod.getModId() + " " + mod.getVersion() + ")").withStyle(ChatFormatting.DARK_GRAY)), false);
+    }
+
+    private static Item findBestItem(String query) {
+        String needle = query.toLowerCase();
+        Item best = null;
+        int bestScore = 0;
+        for (Item item : BuiltInRegistries.ITEM) {
+            ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+            String haystack = (item.getDescription().getString() + " " + id).toLowerCase();
+            int score = scoreLookup(haystack, needle, id);
+            if (score > bestScore) {
+                bestScore = score;
+                best = item;
+            }
+        }
+        return best;
+    }
+
+    private static Block findBestBlock(String query) {
+        String needle = query.toLowerCase();
+        Block best = null;
+        int bestScore = 0;
+        for (Block block : BuiltInRegistries.BLOCK) {
+            ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+            String haystack = (block.getName().getString() + " " + id).toLowerCase();
+            int score = scoreLookup(haystack, needle, id);
+            if (score > bestScore) {
+                bestScore = score;
+                best = block;
+            }
+        }
+        return best;
+    }
+
+    private static IModInfo findBestMod(String query) {
+        String needle = query.toLowerCase();
+        IModInfo best = null;
+        int bestScore = 0;
+        for (IModInfo mod : ModList.get().getMods()) {
+            String haystack = (mod.getDisplayName() + " " + mod.getModId() + " " + mod.getVersion()).toLowerCase();
+            int score = scoreLookup(haystack, needle, ResourceLocation.tryParse(mod.getModId()));
+            if (score > bestScore) {
+                bestScore = score;
+                best = mod;
+            }
+        }
+        return best;
+    }
+
+    private static int scoreLookup(String haystack, String needle, ResourceLocation id) {
+        if (needle.isBlank()) {
+            return 0;
+        }
+
+        int score = 0;
+        if (haystack.contains(needle)) {
+            score += 10;
+        }
+        if (id != null) {
+            if (id.toString().equals(needle)) {
+                score += 20;
+            }
+            if (id.getPath().equals(needle)) {
+                score += 15;
+            }
+            if (id.getNamespace().equals(needle)) {
+                score += 12;
+            }
+        }
+        return score;
+    }
+
+    private static void showTone() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI tone: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(Config.RESPONSE_TONE.get()).withStyle(ChatFormatting.AQUA)), false);
+        minecraft.player.displayClientMessage(Component.literal("Use /mcai tone terse|balanced|detailed").withStyle(ChatFormatting.DARK_GRAY), false);
+    }
+
+    private static void setTone(String tone) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        Config.RESPONSE_TONE.set(tone);
+        Config.RESPONSE_TONE.save();
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI tone set to ").withStyle(ChatFormatting.GREEN)
+                .append(Component.literal(tone).withStyle(ChatFormatting.AQUA)), false);
     }
 
     private static String errorText(Throwable error) {
