@@ -1,9 +1,13 @@
 package com.modai.mcai.client.command;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.modai.mcai.Config;
 import com.modai.mcai.client.AiChatManager.HistoryExportResult;
 import com.modai.mcai.client.AiChatManager;
+import com.modai.mcai.client.bookmark.BookmarkManager;
+import com.modai.mcai.client.bookmark.BookmarkManager.BookmarkEntry;
+import com.modai.mcai.client.bookmark.BookmarkManager.BookmarkOpResult;
 import com.modai.mcai.client.context.QuestContextProvider;
 import com.modai.mcai.client.recipe.JeiRecipeBridge;
 import com.modai.mcai.client.recipe.JeiRecipeBridge.OpenResult;
@@ -57,6 +61,59 @@ public class AiCommand {
                             clearRecipeTrack();
                             return 1;
                         }))
+                .then(literal("bookmark")
+                        .executes(context -> {
+                            showBookmarkHelp();
+                            return 1;
+                        })
+                        .then(literal("add")
+                                .then(argument("label", StringArgumentType.string())
+                                        .then(argument("text", StringArgumentType.greedyString())
+                                                .executes(context -> {
+                                                    addBookmark(StringArgumentType.getString(context, "label"), StringArgumentType.getString(context, "text"));
+                                                    return 1;
+                                                }))))
+                        .then(literal("current")
+                                .then(argument("label", StringArgumentType.string())
+                                        .executes(context -> {
+                                            bookmarkCurrentConversation(StringArgumentType.getString(context, "label"));
+                                            return 1;
+                                        })))
+                        .then(literal("item")
+                                .then(argument("label", StringArgumentType.string())
+                                        .then(argument("query", StringArgumentType.greedyString())
+                                                .executes(context -> {
+                                                    bookmarkItem(StringArgumentType.getString(context, "label"), StringArgumentType.getString(context, "query"));
+                                                    return 1;
+                                                }))))
+                        .then(literal("recipe")
+                                .then(argument("label", StringArgumentType.string())
+                                        .executes(context -> {
+                                            bookmarkTrackedRecipe(StringArgumentType.getString(context, "label"));
+                                            return 1;
+                                        })
+                                        .then(argument("query", StringArgumentType.greedyString())
+                                                .executes(context -> {
+                                                    bookmarkRecipeQuery(StringArgumentType.getString(context, "label"), StringArgumentType.getString(context, "query"));
+                                                    return 1;
+                                                }))))
+                        .then(literal("list")
+                                .executes(context -> {
+                                    listBookmarks();
+                                    return 1;
+                                }))
+                        .then(literal("open")
+                                .then(argument("index", IntegerArgumentType.integer(1))
+                                        .executes(context -> {
+                                            openBookmark(IntegerArgumentType.getInteger(context, "index"));
+                                            return 1;
+                                        })))
+                        .then(literal("remove")
+                                .then(argument("index", IntegerArgumentType.integer(1))
+                                        .executes(context -> {
+                                            removeBookmark(IntegerArgumentType.getInteger(context, "index"));
+                                            return 1;
+                                        }))))
                 .then(literal("history")
                         .executes(context -> {
                             showHistoryHelp();
@@ -211,6 +268,152 @@ public class AiCommand {
 
         RecipeTracker.get().clear();
         minecraft.player.displayClientMessage(Component.literal("MCAI: Cleared recipe highlights.").withStyle(ChatFormatting.GREEN), false);
+    }
+
+    private static void showBookmarkHelp() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI bookmarks: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal("add / current / item / recipe / list / open / remove").withStyle(ChatFormatting.AQUA)), false);
+    }
+
+    private static void addBookmark(String label, String text) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "note", text, preview(text, 80));
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void bookmarkCurrentConversation(String label) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        String prompt = AiChatManager.get().getLastUserMessage().orElse("");
+        if (prompt.isBlank()) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No previous user question to bookmark.").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        String note = AiChatManager.get().getHistory().stream()
+                .filter(message -> "assistant".equals(message.role()))
+                .reduce((first, second) -> second)
+                .map(message -> message.content())
+                .orElse("");
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "question", prompt, note);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void bookmarkItem(String label, String query) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        Item item = findBestItem(query);
+        if (item == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No item found for ").withStyle(ChatFormatting.RED)
+                    .append(Component.literal(query).withStyle(ChatFormatting.WHITE)), false);
+            return;
+        }
+
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+        String note = item.getDescription().getString() + " (" + id + ")";
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "item", query, note);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void bookmarkTrackedRecipe(String label) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        RecipeTracker tracker = RecipeTracker.get();
+        if (!tracker.isTracking() || tracker.targetStack().isEmpty()) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No tracked recipe to bookmark.").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        String prompt = tracker.targetName().getString();
+        String note = "Tracked recipe for " + prompt;
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "recipe", prompt, note);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void bookmarkRecipeQuery(String label, String query) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        String trimmed = query.trim();
+        if (trimmed.isEmpty()) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: Recipe bookmark query cannot be empty.").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        BookmarkOpResult result = BookmarkManager.get().addBookmark(label, "recipe", trimmed, "Recipe query");
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
+    }
+
+    private static void listBookmarks() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal(BookmarkManager.get().formatBookmarks()).withStyle(ChatFormatting.AQUA), false);
+    }
+
+    private static void openBookmark(int index) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        BookmarkEntry entry = BookmarkManager.get().getBookmark(index).orElse(null);
+        if (entry == null) {
+            minecraft.player.displayClientMessage(Component.literal("MCAI: No bookmark at index ").withStyle(ChatFormatting.RED)
+                    .append(Component.literal(Integer.toString(index)).withStyle(ChatFormatting.WHITE)), false);
+            return;
+        }
+
+        minecraft.player.displayClientMessage(Component.literal("MCAI bookmark: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(entry.label()).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" [" + entry.kind() + "]").withStyle(ChatFormatting.DARK_GRAY)), false);
+        if (!entry.note().isBlank()) {
+            minecraft.player.displayClientMessage(Component.literal(entry.note()).withStyle(ChatFormatting.GRAY), false);
+        }
+
+        AiChatManager.get().ask(entry.prompt(),
+                reply -> minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(ChatFormatting.AQUA)
+                        .append(Component.literal(reply).withStyle(ChatFormatting.WHITE)), false),
+                error -> minecraft.player.displayClientMessage(Component.literal("MCAI error: ").withStyle(ChatFormatting.RED)
+                        .append(Component.literal(errorText(error)).withStyle(ChatFormatting.WHITE)), false));
+    }
+
+    private static void removeBookmark(int index) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+
+        BookmarkOpResult result = BookmarkManager.get().removeBookmark(index);
+        minecraft.player.displayClientMessage(Component.literal("MCAI: ").withStyle(result.success() ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(result.message()), false);
     }
 
     private static void showHistoryHelp() {
@@ -449,5 +652,13 @@ public class AiCommand {
             return error.getClass().getSimpleName();
         }
         return message;
+    }
+
+    private static String preview(String text, int limit) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.length() <= limit) {
+            return trimmed;
+        }
+        return trimmed.substring(0, Math.max(0, limit - 3)) + "...";
     }
 }

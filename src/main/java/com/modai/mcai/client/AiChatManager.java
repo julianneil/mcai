@@ -144,15 +144,15 @@ public class AiChatManager {
         }
 
         if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_MODPACK_CONTEXT.getAsBoolean()) {
-            prompt.append("\n\n").append(modpackContextProvider.buildContext());
+            prompt.append("\n\n").append(richContext(contextProfile) ? modpackContextProvider.buildContext() : modpackContextProvider.buildSummary());
         }
 
         if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_PLAYER_CONTEXT.getAsBoolean()) {
-            prompt.append("\n\n").append(playerContextProvider.buildContext());
+            prompt.append("\n\n").append(richContext(contextProfile) ? playerContextProvider.buildContext() : playerContextProvider.buildSummary());
         }
 
         if (!Config.CONTEXT_PROFILE_MINIMAL.equals(contextProfile) && Config.INCLUDE_INVENTORY_CONTEXT.getAsBoolean()) {
-            prompt.append("\n\n").append(inventoryContextProvider.buildContext());
+            prompt.append("\n\n").append(richContext(contextProfile) ? inventoryContextProvider.buildContext() : inventoryContextProvider.buildSummary());
         }
 
         if (Config.INCLUDE_QUEST_CONTEXT.getAsBoolean()) {
@@ -165,6 +165,10 @@ public class AiChatManager {
         }
 
         return prompt.toString();
+    }
+
+    private boolean richContext(String contextProfile) {
+        return Config.CONTEXT_PROFILE_RICH.equals(contextProfile);
     }
 
     private void appendToneInstruction(StringBuilder prompt) {

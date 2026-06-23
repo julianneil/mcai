@@ -13,7 +13,7 @@ public class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     public static final ModConfigSpec.ConfigValue<String> CONTEXT_PROFILE = BUILDER
-            .comment("Prompt context preset. minimal includes only recipe context, normal uses the individual toggles, and rich adds a stronger guidance prompt.")
+            .comment("Prompt context preset. minimal includes only recipe context, normal uses compact summaries from the individual toggles, and rich adds the fuller context payload plus stronger guidance.")
             .define("contextProfile", CONTEXT_PROFILE_NORMAL, value -> value instanceof String string && isValidContextProfile(string));
 
     public static final ModConfigSpec.ConfigValue<String> RESPONSE_TONE = BUILDER

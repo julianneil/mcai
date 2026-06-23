@@ -14,6 +14,7 @@ import java.util.Map;
 
 public class InventoryContextProvider {
     private static final int MAX_SUMMARY_LINES = 80;
+    private static final int MAX_COMPACT_LINES = 12;
 
     public String buildContext() {
         LocalPlayer player = Minecraft.getInstance().player;
@@ -31,6 +32,22 @@ public class InventoryContextProvider {
         return context.toString().trim();
     }
 
+    public String buildSummary() {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return "Inventory context unavailable: no player loaded.";
+        }
+
+        StringBuilder context = new StringBuilder();
+        context.append("Inventory summary:\n");
+        appendStack(context, "Main hand", player.getMainHandItem());
+        appendStack(context, "Off hand", player.getOffhandItem());
+        appendArmorCompact(context, player);
+        appendHotbarCompact(context, player);
+        appendInventoryTopItems(context, player);
+        return context.toString().trim();
+    }
+
     private void appendArmor(StringBuilder context, LocalPlayer player) {
         context.append("Armor:\n");
         appendStack(context, "- Head", player.getItemBySlot(EquipmentSlot.HEAD));
@@ -44,6 +61,69 @@ public class InventoryContextProvider {
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
             appendStack(context, "- Slot " + (slot + 1), stack);
+        }
+    }
+
+    private void appendArmorCompact(StringBuilder context, LocalPlayer player) {
+        context.append("Armor: ");
+        context.append(stackSummary(player.getItemBySlot(EquipmentSlot.HEAD)));
+        context.append(", ");
+        context.append(stackSummary(player.getItemBySlot(EquipmentSlot.CHEST)));
+        context.append(", ");
+        context.append(stackSummary(player.getItemBySlot(EquipmentSlot.LEGS)));
+        context.append(", ");
+        context.append(stackSummary(player.getItemBySlot(EquipmentSlot.FEET)));
+        context.append('\n');
+    }
+
+    private void appendHotbarCompact(StringBuilder context, LocalPlayer player) {
+        List<String> entries = new ArrayList<>();
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            entries.add((slot + 1) + ":" + stackSummary(stack));
+        }
+
+        context.append("Hotbar: ");
+        if (entries.isEmpty()) {
+            context.append("empty\n");
+            return;
+        }
+        context.append(String.join(", ", entries)).append('\n');
+    }
+
+    private void appendInventoryTopItems(StringBuilder context, LocalPlayer player) {
+        Map<String, Integer> itemCounts = new LinkedHashMap<>();
+        int totalItems = 0;
+        for (ItemStack stack : player.getInventory().items) {
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            String key = stackName(stack);
+            itemCounts.merge(key, stack.getCount(), Integer::sum);
+            totalItems += stack.getCount();
+        }
+
+        context.append("Inventory: ").append(itemCounts.size()).append(" item types, ").append(totalItems).append(" total items\n");
+        if (itemCounts.isEmpty()) {
+            context.append("- Empty\n");
+            return;
+        }
+
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(itemCounts.entrySet());
+        entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()));
+
+        int limit = Math.min(entries.size(), MAX_COMPACT_LINES);
+        for (int i = 0; i < limit; i++) {
+            Map.Entry<String, Integer> entry = entries.get(i);
+            context.append("- ").append(entry.getValue()).append("x ").append(entry.getKey()).append('\n');
+        }
+
+        if (entries.size() > limit) {
+            context.append("- ... plus ").append(entries.size() - limit).append(" more item types\n");
         }
     }
 
@@ -93,5 +173,12 @@ public class InventoryContextProvider {
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         String displayName = stack.getHoverName().getString();
         return displayName + " (" + id + ")";
+    }
+
+    private String stackSummary(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return "empty";
+        }
+        return stack.getCount() + "x " + stack.getHoverName().getString();
     }
 }

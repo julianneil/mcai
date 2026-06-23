@@ -9,8 +9,10 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 - `/ai <message>` in-game chat command.
 - `/mcai tone terse|balanced|detailed` response-style control.
 - `/mcai history`, `/mcai history clear`, `/mcai history retry`, and `/mcai history export`.
+- `/mcai bookmark add`, `/mcai bookmark current`, `/mcai bookmark item`, `/mcai bookmark recipe`, `/mcai bookmark list`, `/mcai bookmark open`, and `/mcai bookmark remove`.
 - `G` keybind for the MCAI chat GUI.
 - Inventory, player, modpack, and recipe-aware prompt context.
+- Compact summaries for inventory, player, and modpack context when using the normal context profile.
 - FTB Quests context and progression suggestions when the quest mod is installed.
 - Recipe grounding from loaded client recipes.
 - Recipe tracking with colored inventory highlights and a recipe tree panel.
@@ -140,6 +142,18 @@ Inspect chat history:
 /mcai history export
 ```
 
+Manage bookmarks:
+
+```text
+/mcai bookmark add "base goals" remember to craft the miner and storage drawer
+/mcai bookmark current "last question"
+/mcai bookmark item "copper" copper ingot
+/mcai bookmark recipe "furnace"
+/mcai bookmark list
+/mcai bookmark open 1
+/mcai bookmark remove 1
+```
+
 Look up registry and mod data:
 
 ```text
@@ -193,6 +207,7 @@ Check quest status and next steps:
   - Base ingredient.
 - Hover a highlighted slot to see why the item is highlighted.
 - When FTB Quests is installed, MCAI can use quest context to explain likely next progression steps.
+- Normal context mode sends shorter summaries for player, inventory, and modpack state; rich mode sends fuller detail.
 
 ## Troubleshooting
 

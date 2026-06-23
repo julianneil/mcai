@@ -14,6 +14,7 @@ import java.util.Map;
 
 public class ModpackContextProvider {
     private static final int MAX_MODS = 80;
+    private static final int MAX_SUMMARY_MODS = 20;
     private static final int MAX_NAMESPACES = 40;
 
     public String buildContext() {
@@ -23,6 +24,34 @@ public class ModpackContextProvider {
         appendRegistrySummary(context, "Item namespaces", BuiltInRegistries.ITEM);
         appendRegistrySummary(context, "Block namespaces", BuiltInRegistries.BLOCK);
         appendRegistrySummary(context, "Entity namespaces", BuiltInRegistries.ENTITY_TYPE);
+        return context.toString().trim();
+    }
+
+    public String buildSummary() {
+        StringBuilder context = new StringBuilder();
+        context.append("Modpack summary:\n");
+        List<IModInfo> mods = ModList.get().getMods().stream()
+                .sorted(Comparator.comparing(IModInfo::getModId))
+                .toList();
+
+        context.append("Loaded mods: ").append(mods.size()).append('\n');
+        if (!mods.isEmpty()) {
+            context.append("Key mods: ");
+            int limit = Math.min(mods.size(), MAX_SUMMARY_MODS);
+            for (int i = 0; i < limit; i++) {
+                if (i > 0) {
+                    context.append(", ");
+                }
+                context.append(mods.get(i).getModId());
+            }
+            if (mods.size() > limit) {
+                context.append(", ...");
+            }
+            context.append('\n');
+        }
+
+        appendRegistrySummaryCompact(context, "Item namespaces", BuiltInRegistries.ITEM);
+        appendRegistrySummaryCompact(context, "Block namespaces", BuiltInRegistries.BLOCK);
         return context.toString().trim();
     }
 
@@ -72,5 +101,29 @@ public class ModpackContextProvider {
         if (entries.size() > limit) {
             context.append("- ... plus ").append(entries.size() - limit).append(" more namespaces\n");
         }
+    }
+
+    private <T> void appendRegistrySummaryCompact(StringBuilder context, String label, Registry<T> registry) {
+        Map<String, Integer> namespaceCounts = new HashMap<>();
+        for (ResourceLocation key : registry.keySet()) {
+            namespaceCounts.merge(key.getNamespace(), 1, Integer::sum);
+        }
+
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(namespaceCounts.entrySet());
+        entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()));
+
+        context.append(label).append(": ");
+        int limit = Math.min(entries.size(), 8);
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) {
+                context.append(", ");
+            }
+            Map.Entry<String, Integer> entry = entries.get(i);
+            context.append(entry.getKey()).append("=").append(entry.getValue());
+        }
+        if (entries.size() > limit) {
+            context.append(", ...");
+        }
+        context.append('\n');
     }
 }
