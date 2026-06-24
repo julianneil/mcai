@@ -13,6 +13,8 @@ public class Config {
     public static final String CHAT_MODE_HELP = "help";
     public static final String CHAT_MODE_DEBUG = "debug";
     public static final String CHAT_MODE_PROGRESS = "progression";
+    public static final String AI_PROVIDER_OLLAMA = "ollama";
+    public static final String AI_PROVIDER_LM_STUDIO = "lmstudio";
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -27,6 +29,14 @@ public class Config {
     public static final ModConfigSpec.ConfigValue<String> OLLAMA_ENDPOINT = BUILDER
             .comment("Base URL for the local Ollama server.")
             .define("ollamaEndpoint", "http://127.0.0.1:11434");
+
+    public static final ModConfigSpec.ConfigValue<String> LM_STUDIO_ENDPOINT = BUILDER
+            .comment("Base URL for the local LM Studio server.")
+            .define("lmStudioEndpoint", "http://127.0.0.1:1234");
+
+    public static final ModConfigSpec.ConfigValue<String> AI_PROVIDER = BUILDER
+            .comment("AI backend provider. Supported values: ollama, lmstudio.")
+            .define("aiProvider", AI_PROVIDER_OLLAMA, value -> value instanceof String string && isValidAiProvider(string));
 
     public static final ModConfigSpec.BooleanValue INCLUDE_INVENTORY_CONTEXT = BUILDER
             .comment("Whether MCAI should include your current inventory in AI prompts.")
@@ -73,7 +83,7 @@ public class Config {
             .defineInRange("recipeBranchMaxChildren", 3, 1, 8);
 
     public static final ModConfigSpec.ConfigValue<String> OLLAMA_MODEL = BUILDER
-            .comment("Ollama model name to use for AI chat.")
+            .comment("Model name to use for AI chat. Applies to Ollama and LM Studio.")
             .define("ollamaModel", "gemma4:latest");
 
     public static final ModConfigSpec.ConfigValue<String> SYSTEM_PROMPT = BUILDER
@@ -103,5 +113,10 @@ public class Config {
                 || CHAT_MODE_HELP.equals(value)
                 || CHAT_MODE_DEBUG.equals(value)
                 || CHAT_MODE_PROGRESS.equals(value);
+    }
+
+    private static boolean isValidAiProvider(String value) {
+        return AI_PROVIDER_OLLAMA.equals(value)
+                || AI_PROVIDER_LM_STUDIO.equals(value);
     }
 }

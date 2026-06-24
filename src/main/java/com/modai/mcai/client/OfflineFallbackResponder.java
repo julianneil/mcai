@@ -33,13 +33,13 @@ public class OfflineFallbackResponder {
         LocalPlayer player = Minecraft.getInstance().player;
         Level level = Minecraft.getInstance().level;
         if (player == null || level == null) {
-            return Optional.of("Ollama is unavailable, and no world is loaded yet. MCAI's offline fallback can answer local recipe, item, block, mod, and quest questions once a world is open.");
+            return Optional.of("The configured AI backend is unavailable, and no world is loaded yet. MCAI's offline fallback can answer local recipe, item, block, mod, and quest questions once a world is open.");
         }
 
         String message = userMessage == null ? "" : userMessage.trim();
         String lower = message.toLowerCase(Locale.ROOT);
         List<String> sections = new ArrayList<>();
-        sections.add("Ollama is unavailable right now, so I'm using MCAI's local fallback.");
+        sections.add("The configured AI backend is unavailable right now, so I'm using MCAI's local fallback.");
 
         boolean matched = false;
 
@@ -76,7 +76,7 @@ public class OfflineFallbackResponder {
         }
 
         if (!matched) {
-            sections.add("I can still answer local recipe, item, block, mod, and quest questions while Ollama is offline.");
+            sections.add("I can still answer local recipe, item, block, mod, and quest questions while the AI backend is offline.");
             sections.add("Try /mcai item <query>, /mcai block <query>, /mcai mod <query>, /mcai quests next, or /mcai track <recipe>.");
         }
 

@@ -2,7 +2,7 @@
 
 AI Integration in Minecraft.
 
-MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant backed by a local Ollama server. It can answer questions from chat or an in-game GUI, include game context in prompts, look up loaded recipes, and track recipe trees with inventory highlights.
+MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant backed by a local AI server. It can answer questions from chat or an in-game GUI, include game context in prompts, look up loaded recipes, and track recipe trees with inventory highlights.
 
 ## Features
 
@@ -20,16 +20,16 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 - Recipe tracking with colored inventory highlights and a branch-style recipe visual.
 - Quick lookups with `/mcai item`, `/mcai block`, and `/mcai mod`.
 - Quest summary and next-step guidance with `/mcai quests` and `/mcai quests next`.
-- Offline fallback answers for local recipe, lookup, and quest questions when Ollama is unavailable.
-- Local-only AI inference through Ollama by default.
+- Offline fallback answers for local recipe, lookup, and quest questions when the configured AI backend is unavailable.
+- Local-only AI inference through Ollama or LM Studio.
 
 ## Requirements
 
 - Minecraft `1.21.1`.
 - NeoForge for Minecraft `1.21.1`.
 - Java/JDK `21`.
-- A local Ollama install.
-- An Ollama chat model, for example `gemma4:latest` or another model configured in `mcai-client.toml`.
+- A local Ollama or LM Studio install.
+- A local model name, for example `gemma4:latest`, configured in `mcai-client.toml`.
 
 ## Install Ollama
 
@@ -55,6 +55,12 @@ If you prefer another model, pull it instead, then update `ollamaModel` in the M
 ollama run gemma4:latest "hello"
 ```
 
+## Install LM Studio (optional)
+
+1. Download and install LM Studio from [lmstudio.ai](https://lmstudio.ai/).
+2. In LM Studio, load your model and start the local server.
+3. Use `aiProvider = "lmstudio"` and `lmStudioEndpoint = "http://127.0.0.1:1234"` in `mcai-client.toml`.
+
 ## Install the mod
 
 1. Install Minecraft `1.21.1` with NeoForge.
@@ -79,6 +85,8 @@ Important config values:
 
 ```toml
 ollamaEndpoint = "http://127.0.0.1:11434"
+lmStudioEndpoint = "http://127.0.0.1:1234"
+aiProvider = "ollama"
 ollamaModel = "gemma4:latest"
 includeInventoryContext = true
 includePlayerContext = true
@@ -97,10 +105,12 @@ requestTimeoutSeconds = 120
 Notes:
 
 - `ollamaEndpoint` should point to your local Ollama server.
-- `ollamaModel` must match a model installed with `ollama pull`.
+- `lmStudioEndpoint` should point to your local LM Studio server.
+- `aiProvider` supports `ollama` and `lmstudio`.
+- `ollamaModel` is the model name MCAI sends to the active backend.
 - Context toggles control what game information MCAI includes in prompts.
 - `includeQuestContext` enables soft FTB Quests integration when the mod is present.
-- `enableOfflineFallback` lets MCAI answer local recipe, registry, and quest questions even if Ollama is down.
+- `enableOfflineFallback` lets MCAI answer local recipe, registry, and quest questions even if the AI backend is down.
 - `recipeBranchMaxDepth` and `recipeBranchMaxChildren` control how much of the recipe branch visual is shown in the GUI.
 - `chatMode` changes the prompt style to default, help, debug, or progression.
 - `shareWhitelist` limits which live game-state categories MCAI is allowed to send to the model.
@@ -245,9 +255,9 @@ Check quest status and next steps:
 
 ## Troubleshooting
 
-### MCAI says Ollama is unavailable
+### MCAI says the AI backend is unavailable
 
-Check that Ollama is running:
+If `aiProvider = "ollama"`, check that Ollama is running:
 
 ```powershell
 curl http://127.0.0.1:11434/api/tags
@@ -255,7 +265,9 @@ curl http://127.0.0.1:11434/api/tags
 
 If this fails, restart Ollama and try again.
 
-If you want MCAI to keep working without Ollama, leave `enableOfflineFallback = true` and use the local commands for items, blocks, mods, quests, and tracked recipes.
+If `aiProvider = "lmstudio"`, make sure LM Studio's local server is running and `lmStudioEndpoint` matches it.
+
+If you want MCAI to keep working without the model backend, leave `enableOfflineFallback = true` and use the local commands for items, blocks, mods, quests, and tracked recipes.
 
 ### Model not found
 
@@ -265,7 +277,9 @@ Pull the configured model:
 ollama pull gemma4:latest
 ```
 
-Or change `ollamaModel` in `config/mcai-client.toml` to a model that appears in:
+Or change `ollamaModel` in `config/mcai-client.toml` to a model available in your active backend.
+
+For Ollama, check:
 
 ```powershell
 ollama list

@@ -2,7 +2,7 @@ package com.modai.mcai.client.gui;
 
 import com.modai.mcai.Config;
 import com.modai.mcai.client.AiChatManager;
-import com.modai.mcai.client.OllamaClient.AiMessage;
+import com.modai.mcai.client.AiMessage;
 import com.modai.mcai.client.recipe.JeiRecipeBridge;
 import com.modai.mcai.client.recipe.RecipeTracker;
 import com.modai.mcai.client.recipe.RecipeTracker.HighlightRole;
@@ -35,6 +35,8 @@ public class AiChatScreen extends Screen {
     private static final int RECIPE_BRANCH_ROW_GAP = 16;
     private static final int RECIPE_BRANCH_CHILD_GAP = 12;
     private static final int RECIPE_BRANCH_MAX_WIDTH = 220;
+    private static final int RECIPE_BRANCH_MIN_NODE_WIDTH = 56;
+    private static final int RECIPE_BRANCH_TARGET_NODE_WIDTH = 150;
 
     private final LinkedList<Component> transcript = new LinkedList<>();
     private final List<FormattedCharSequence> wrappedTranscript = new ArrayList<>();
@@ -49,6 +51,7 @@ public class AiChatScreen extends Screen {
     private boolean transcriptDirty = true;
     private int cachedLineWidth = -1;
     private int scrollOffsetLines;
+    private int adaptiveBranchChildLimit = 1;
 
     public AiChatScreen() {
         super(Component.translatable("screen.mcai.ai_chat"));
@@ -336,21 +339,27 @@ public class AiChatScreen extends Screen {
 
         branchHitBoxes.clear();
 
+        int panelWidth = right - left;
+        int availableWidth = Math.max(1, panelWidth - (PANEL_INSET * 2));
+        adaptiveBranchChildLimit = computeAdaptiveBranchChildLimit(availableWidth);
+
         BranchNode root = buildBranchNode(tracker.recipeTree().get(), 0);
         BranchLayout layout = measureBranchLayout(root);
+        float scale = computeBranchScale(layout.width(), availableWidth);
+        int scaledLayoutWidth = Math.max(1, Math.round(layout.width() * scale));
+        int scaledLayoutHeight = Math.max(1, Math.round(layout.height() * scale));
         int titleHeight = this.font.lineHeight + 4;
-        int panelHeight = PANEL_INSET + titleHeight + layout.height() + PANEL_INSET;
+        int panelHeight = PANEL_INSET + titleHeight + scaledLayoutHeight + PANEL_INSET;
         int bottom = top + panelHeight;
-        int panelWidth = right - left;
         int contentTop = top + PANEL_INSET + titleHeight;
-        int originX = left + Math.max(PANEL_INSET, (panelWidth - layout.width()) / 2);
+        int originX = left + Math.max(PANEL_INSET, (panelWidth - scaledLayoutWidth) / 2);
 
         guiGraphics.fill(left, top, right, bottom, 0xD0181818);
         guiGraphics.renderOutline(left, top, right - left, panelHeight, 0xFF6A6A6A);
         guiGraphics.drawString(this.font, Component.literal("Tracked recipe branch").withStyle(ChatFormatting.YELLOW), left + PANEL_INSET, top + PANEL_INSET, 0xFFFFF27A, false);
         guiGraphics.drawString(this.font, Component.literal("Hover a branch for details").withStyle(ChatFormatting.DARK_GRAY), right - PANEL_INSET - this.font.width("Hover a branch for details"), top + PANEL_INSET, 0x808080, false);
 
-        renderBranchNode(guiGraphics, layout, originX, contentTop);
+        renderBranchNode(guiGraphics, layout, originX, contentTop, scale);
 
         return bottom;
     }
@@ -358,7 +367,7 @@ public class AiChatScreen extends Screen {
     private BranchNode buildBranchNode(RecipeTreeNode node, int depth) {
         List<BranchNode> children = new ArrayList<>();
         int maxDepth = Config.RECIPE_BRANCH_MAX_DEPTH.getAsInt();
-        int maxChildren = Config.RECIPE_BRANCH_MAX_CHILDREN.getAsInt();
+        int maxChildren = Math.min(Config.RECIPE_BRANCH_MAX_CHILDREN.getAsInt(), adaptiveBranchChildLimit);
         if (depth < maxDepth - 1) {
             int limit = Math.min(node.children().size(), maxChildren);
             for (int i = 0; i < limit; i++) {
@@ -389,7 +398,7 @@ public class AiChatScreen extends Screen {
             childrenWidth += RECIPE_BRANCH_CHILD_GAP * (children.size() - 1);
         }
 
-        int nodeWidth = Math.min(RECIPE_BRANCH_MAX_WIDTH, Math.max(72, this.font.width(node.label().getString()) + 18));
+        int nodeWidth = Math.min(RECIPE_BRANCH_MAX_WIDTH, Math.max(RECIPE_BRANCH_MIN_NODE_WIDTH, this.font.width(node.label().getString()) + 18));
         int width = Math.max(nodeWidth, childrenWidth);
         int height = this.font.lineHeight + 10;
         if (!children.isEmpty()) {
@@ -412,11 +421,11 @@ public class AiChatScreen extends Screen {
         return layout;
     }
 
-    private void renderBranchNode(GuiGraphics guiGraphics, BranchLayout layout, int originX, int originY) {
-        int x = originX + layout.nodeX();
-        int y = originY + layout.nodeY();
-        int width = layout.nodeWidth();
-        int height = layout.nodeHeight();
+    private void renderBranchNode(GuiGraphics guiGraphics, BranchLayout layout, int originX, int originY, float scale) {
+        int x = scaled(originX, layout.nodeX(), scale);
+        int y = scaled(originY, layout.nodeY(), scale);
+        int width = Math.max(18, Math.round(layout.nodeWidth() * scale));
+        int height = Math.max(this.font.lineHeight + 4, Math.round(layout.nodeHeight() * scale));
         int borderColor = roleBorderColor(layout.node().role());
         int fillColor = roleFillColor(layout.node().role());
         branchHitBoxes.add(new BranchHitBox(x, y, width, height, layout.node().reason(), layout.node().stack()));
@@ -429,7 +438,7 @@ public class AiChatScreen extends Screen {
 
         String text = layout.node().label().getString();
         String clipped = text;
-        int available = width - 10;
+        int available = Math.max(8, width - 10);
         if (this.font.width(text) > available) {
             clipped = this.font.plainSubstrByWidth(text, available);
             if (!clipped.equals(text) && clipped.length() < text.length()) {
@@ -448,11 +457,12 @@ public class AiChatScreen extends Screen {
         }
 
         int parentCenterX = x + width / 2;
-        int branchY = y + height + RECIPE_BRANCH_ROW_GAP / 2;
+        int branchGap = Math.max(2, Math.round((RECIPE_BRANCH_ROW_GAP / 2.0F) * scale));
+        int branchY = y + height + branchGap;
         int leftMost = Integer.MAX_VALUE;
         int rightMost = Integer.MIN_VALUE;
         for (BranchLayout child : layout.children()) {
-            int childCenterX = originX + child.nodeX() + child.nodeWidth() / 2;
+            int childCenterX = scaled(originX, child.nodeX() + child.nodeWidth() / 2, scale);
             leftMost = Math.min(leftMost, childCenterX);
             rightMost = Math.max(rightMost, childCenterX);
         }
@@ -462,9 +472,10 @@ public class AiChatScreen extends Screen {
             guiGraphics.fill(leftMost, branchY, rightMost + 1, branchY + 1, borderColor);
         }
         for (BranchLayout child : layout.children()) {
-            int childCenterX = originX + child.nodeX() + child.nodeWidth() / 2;
-            guiGraphics.fill(childCenterX, branchY, childCenterX + 1, originY + child.nodeY(), borderColor);
-            renderBranchNode(guiGraphics, child, originX, originY);
+            int childCenterX = scaled(originX, child.nodeX() + child.nodeWidth() / 2, scale);
+            int childTopY = scaled(originY, child.nodeY(), scale);
+            guiGraphics.fill(childCenterX, branchY, childCenterX + 1, childTopY, borderColor);
+            renderBranchNode(guiGraphics, child, originX, originY, scale);
         }
     }
 
@@ -563,9 +574,14 @@ public class AiChatScreen extends Screen {
             return 0;
         }
 
+        int panelWidth = this.width - (PADDING * 2);
+        int availableWidth = Math.max(1, panelWidth - (PANEL_INSET * 2));
+        adaptiveBranchChildLimit = computeAdaptiveBranchChildLimit(availableWidth);
         BranchNode root = buildBranchNode(tracker.recipeTree().get(), 0);
         BranchLayout layout = measureBranchLayout(root);
-        return PANEL_INSET + this.font.lineHeight + 4 + layout.height() + PANEL_INSET;
+        float scale = computeBranchScale(layout.width(), availableWidth);
+        int scaledLayoutHeight = Math.max(1, Math.round(layout.height() * scale));
+        return PANEL_INSET + this.font.lineHeight + 4 + scaledLayoutHeight + PANEL_INSET;
     }
 
     private void markTranscriptDirty() {
@@ -576,6 +592,7 @@ public class AiChatScreen extends Screen {
     private Component statusText() {
         RecipeTracker tracker = RecipeTracker.get();
         String status = "Model: " + Config.OLLAMA_MODEL.get()
+                + " | Provider: " + AiChatManager.get().describeProvider()
                 + " | Profile: " + Config.CONTEXT_PROFILE.get()
                 + " | Tone: " + Config.RESPONSE_TONE.get()
                 + " | Mode: " + Config.CHAT_MODE.get()
@@ -646,7 +663,7 @@ public class AiChatScreen extends Screen {
         }
 
         private void place(int x, int y) {
-        setNode(x + (width - nodeWidth) / 2, y, nodeWidth, nodeHeight);
+            setNode(x + (width - nodeWidth) / 2, y, nodeWidth, nodeHeight);
             if (children.isEmpty()) {
                 return;
             }
@@ -696,6 +713,23 @@ public class AiChatScreen extends Screen {
         private int nodeHeight() {
             return nodeHeight;
         }
+    }
+
+    private int computeAdaptiveBranchChildLimit(int availableWidth) {
+        int configured = Config.RECIPE_BRANCH_MAX_CHILDREN.getAsInt();
+        int widthBased = Math.max(1, availableWidth / RECIPE_BRANCH_TARGET_NODE_WIDTH);
+        return Math.max(1, Math.min(configured, widthBased));
+    }
+
+    private float computeBranchScale(int layoutWidth, int availableWidth) {
+        if (layoutWidth <= 0 || layoutWidth <= availableWidth) {
+            return 1.0F;
+        }
+        return Math.max(0.55F, availableWidth / (float) layoutWidth);
+    }
+
+    private int scaled(int origin, int value, float scale) {
+        return origin + Math.round(value * scale);
     }
 
     private record BranchHitBox(int x, int y, int width, int height, Component reason, ItemStack stack) {

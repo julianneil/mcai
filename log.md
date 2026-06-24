@@ -27,6 +27,8 @@ This file records the main work completed today and the remaining follow-up item
 - Made tracked recipe nodes clickable.
 - Added JEI opening from tracked recipe nodes when JEI is installed.
 - Kept JEI clicks safe when JEI is missing or not ready.
+- Added AI backend compatibility selection so MCAI can use either Ollama or LM Studio local servers.
+- Tightened recipe branch visual layout behavior so narrow client widths keep the branch panel in-bounds and readable.
 - Updated `README.md` to document the new commands, config values, and behavior.
 - Built and verified the project with `.\gradlew.bat build`.
 

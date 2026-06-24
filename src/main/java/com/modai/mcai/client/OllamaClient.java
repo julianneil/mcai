@@ -130,9 +130,6 @@ public class OllamaClient {
         return value;
     }
 
-    public record AiMessage(String role, String content) {
-    }
-
     public static class OllamaException extends RuntimeException {
         public OllamaException(String message) {
             super(message);

@@ -1,7 +1,6 @@
 package com.modai.mcai.client;
 
 import com.modai.mcai.Config;
-import com.modai.mcai.client.OllamaClient.AiMessage;
 import com.modai.mcai.client.context.InventoryContextProvider;
 import com.modai.mcai.client.context.ModpackContextProvider;
 import com.modai.mcai.client.context.PlayerContextProvider;
@@ -30,6 +29,7 @@ public class AiChatManager {
     private static final AiChatManager INSTANCE = new AiChatManager();
 
     private final OllamaClient ollamaClient = new OllamaClient();
+    private final LmStudioClient lmStudioClient = new LmStudioClient();
     private final InventoryContextProvider inventoryContextProvider = new InventoryContextProvider();
     private final PlayerContextProvider playerContextProvider = new PlayerContextProvider();
     private final ModpackContextProvider modpackContextProvider = new ModpackContextProvider();
@@ -112,6 +112,7 @@ public class AiChatManager {
         Path outputFile = Minecraft.getInstance().gameDirectory.toPath().resolve("mcai-history-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now()) + ".txt");
         StringBuilder export = new StringBuilder();
         export.append("MCAI chat export\n");
+        export.append("Provider: ").append(describeProvider()).append('\n');
         export.append("Model: ").append(Config.OLLAMA_MODEL.get()).append('\n');
         export.append("Tone: ").append(Config.RESPONSE_TONE.get()).append('\n');
         export.append("Context profile: ").append(Config.CONTEXT_PROFILE.get()).append('\n');
@@ -254,6 +255,10 @@ public class AiChatManager {
         return Config.CHAT_MODE.get();
     }
 
+    public synchronized String describeProvider() {
+        return normalizeProvider(Config.AI_PROVIDER.get());
+    }
+
     private String normalizeChatMode(String mode) {
         String value = mode == null ? "" : mode.trim().toLowerCase(Locale.ROOT);
         if (Config.CHAT_MODE_HELP.equals(value)
@@ -288,6 +293,14 @@ public class AiChatManager {
         return String.join(",", values);
     }
 
+    private String normalizeProvider(String provider) {
+        String value = provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
+        if (Config.AI_PROVIDER_LM_STUDIO.equals(value)) {
+            return Config.AI_PROVIDER_LM_STUDIO;
+        }
+        return Config.AI_PROVIDER_OLLAMA;
+    }
+
     private void appendToneInstruction(StringBuilder prompt) {
         String tone = Config.RESPONSE_TONE.get().toLowerCase(Locale.ROOT);
         switch (tone) {
@@ -304,7 +317,7 @@ public class AiChatManager {
     }
 
     private void sendChatRequest(List<AiMessage> requestMessages, String userMessage, Consumer<String> onReply, Consumer<Throwable> onError, Runnable onFailureRestore) {
-        ollamaClient.chat(requestMessages)
+        activeClient().chat(requestMessages)
                 .whenComplete((reply, throwable) -> Minecraft.getInstance().execute(() -> {
                     if (throwable != null) {
                         Optional<String> fallback = offlineFallbackResponder.buildReply(userMessage, unwrap(throwable));
@@ -332,6 +345,13 @@ public class AiChatManager {
                 }));
     }
 
+    private ChatClient activeClient() {
+        if (Config.AI_PROVIDER_LM_STUDIO.equals(describeProvider())) {
+            return lmStudioClient::chat;
+        }
+        return ollamaClient::chat;
+    }
+
     private Throwable unwrap(Throwable throwable) {
         Throwable cause = throwable.getCause();
         return cause == null ? throwable : cause;
@@ -343,6 +363,11 @@ public class AiChatManager {
             return error.getClass().getSimpleName();
         }
         return message;
+    }
+
+    @FunctionalInterface
+    private interface ChatClient {
+        java.util.concurrent.CompletableFuture<String> chat(List<AiMessage> messages);
     }
 
     public record HistoryExportResult(boolean success, Component message, Path path) {
