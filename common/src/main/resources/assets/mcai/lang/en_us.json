@@ -1,0 +1,13 @@
+{
+  "key.categories.mcai": "MCAI",
+  "key.mcai.open_ai_chat": "Open AI Chat",
+
+  "screen.mcai.ai_chat": "MCAI Chat",
+  "screen.mcai.ai_chat.input": "Message",
+  "screen.mcai.ai_chat.input_hint": "Ask about recipes, progression, or advice...",
+  "screen.mcai.ai_chat.send": "Send",
+  "screen.mcai.ai_chat.clear": "Clear",
+  "screen.mcai.ai_chat.retry": "Retry",
+  "screen.mcai.ai_chat.export": "Export",
+  "screen.mcai.ai_chat.empty": "Ask MCAI a question to start the conversation."
+}

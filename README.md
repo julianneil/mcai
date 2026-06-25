@@ -2,7 +2,9 @@
 
 AI Integration in Minecraft.
 
-MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant backed by a local AI server. It can answer questions from chat or an in-game GUI, include game context in prompts, look up loaded recipes, and track recipe trees with inventory highlights.
+MCAI is a client-side Minecraft `1.20.1` mod, built for both Forge and NeoForge, that adds an in-game AI assistant backed by a local AI server. It can answer questions from chat or an in-game GUI, include game context in prompts, look up loaded recipes, and track recipe trees with inventory highlights.
+
+> This is the `1.20.1` port. The shared mod code lives in `common/` and is compiled into two jars — one for Forge and one for NeoForge — by the `forge/` and `neoforge/` subprojects. At `1.20.1` both loaders share the `net.minecraftforge.*` namespace and the same `mods.toml` format, so the two jars differ only in their loader dependency.
 
 ## Features
 
@@ -25,9 +27,9 @@ MCAI is a client-side NeoForge 1.21.1 mod that adds an in-game AI assistant back
 
 ## Requirements
 
-- Minecraft `1.21.1`.
-- NeoForge for Minecraft `1.21.1`.
-- Java/JDK `21`.
+- Minecraft `1.20.1`.
+- Forge or NeoForge for Minecraft `1.20.1`.
+- Java/JDK `17` (the version Minecraft `1.20.1` runs on).
 - A local Ollama or LM Studio install.
 - A local model name, for example `gemma4:latest`, configured in `mcai-client.toml`.
 
@@ -63,9 +65,9 @@ ollama run gemma4:latest "hello"
 
 ## Install the mod
 
-1. Install Minecraft `1.21.1` with NeoForge.
-2. Build or download the MCAI mod `.jar`.
-3. Put the MCAI `.jar` into your Minecraft instance `mods` folder.
+1. Install Minecraft `1.20.1` with Forge or NeoForge.
+2. Build or download the MCAI mod `.jar` for your loader (`mcai-forge-1.20.1-*.jar` or `mcai-neoforge-1.20.1-*.jar`).
+3. Put the matching MCAI `.jar` into your Minecraft instance `mods` folder.
 4. Launch the game once to generate the client config file.
 5. Open the generated config file:
 
@@ -73,10 +75,11 @@ ollama run gemma4:latest "hello"
 config/mcai-client.toml
 ```
 
-For this development workspace, the run-client config is here:
+For this development workspace, the run-client config is here (per loader):
 
 ```text
-run/client/config/mcai-client.toml
+forge/run/config/mcai-client.toml
+neoforge/run/config/mcai-client.toml
 ```
 
 ## Configure MCAI
@@ -299,21 +302,36 @@ ollama list
 
 ## Development
 
-Use JDK 21 and the included Gradle wrapper.
+The shared mod source lives in `common/`. The `forge/` and `neoforge/` subprojects compile that source against MinecraftForge `1.20.1` (via [ModDevGradle](https://github.com/neoforged/ModDevGradle)'s `legacyforge` plugin) and each produce a loader-specific jar. Use the included Gradle wrapper. A JDK is needed to run Gradle; the Java 17 toolchain used for compilation is provisioned automatically.
 
-Build:
+Build both loaders:
 
 ```powershell
 .\gradlew.bat build
 ```
 
+Output jars:
+
+```text
+forge/build/libs/mcai-forge-1.20.1-<version>.jar
+neoforge/build/libs/mcai-neoforge-1.20.1-<version>.jar
+```
+
+Build a single loader:
+
+```powershell
+.\gradlew.bat :forge:build
+.\gradlew.bat :neoforge:build
+```
+
 Run a development client:
 
 ```powershell
-.\gradlew.bat runClient
+.\gradlew.bat :forge:runClient
+.\gradlew.bat :neoforge:runClient
 ```
 
-If Gradle cannot find Java 21, set `JAVA_HOME` first:
+If Gradle cannot find a JDK, set `JAVA_HOME` first:
 
 ```powershell
 $env:JAVA_HOME="$env:USERPROFILE\.jdks\temurin-21.0.11"
