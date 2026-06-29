@@ -28,3 +28,15 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew build
+
+      - name: Upload Forge jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcai-forge
+          path: forge/build/libs/*.jar
+
+      - name: Upload NeoForge jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcai-neoforge
+          path: neoforge/build/libs/*.jar
